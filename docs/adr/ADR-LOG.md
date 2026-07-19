@@ -174,9 +174,13 @@ doesn't attempt (it assumes exactly one instance, itself).
 
 - New `vendor/` directory tracked in git (not gitignored) — the whole point
   is these files are committed so `git diff` shows upstream drift.
-- `scripts/sync_vendor.py --check` should be added to CI (not yet wired —
-  tracked as follow-up in PLAN.md) so stale vendor files surface as a build
-  signal rather than silent drift.
+- **Enforcement wired (2026-07-19, same day):** `.githooks/pre-commit`
+  (opt-in via `git config core.hooksPath .githooks`) runs
+  `sync_vendor.py --check` before every commit; `.github/workflows/ci.yml`
+  runs the same check on every push/PR plus a weekly cron so drift surfaces
+  even without local commits. Neither auto-fixes — refreshing is always a
+  manual `uv run python scripts/sync_vendor.py` + reviewed diff. This closes
+  the "not yet wired" gap noted below in the original version of this ADR.
 - pko's own future `skills/pko-*` SKILL.md files must each state, in their
   own text, "if `pterm`/the `pinokio` skill is available and reachable
   locally, prefer it for \<X\>" where applicable, rather than silently

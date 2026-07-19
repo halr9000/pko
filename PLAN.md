@@ -276,8 +276,9 @@ uv run python scripts/sync_vendor.py --check
 `vendor/manifest.json` records *why* each file is vendored; `vendor/manifest.lock.json`
 records the exact upstream commit SHA — never hand-edit files under `vendor/`.
 
-**Follow-up**: wire `sync_vendor.py --check` into CI once pko has a CI
-pipeline (not yet set up).
+**Enforcement**: `.githooks/pre-commit` (opt-in: `git config core.hooksPath .githooks`)
+and `.github/workflows/ci.yml` (push/PR + weekly cron) both run
+`sync_vendor.py --check`. See README.md "Development" for details.
 
 ## Create App Command (ADR-003)
 

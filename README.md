@@ -101,6 +101,34 @@ app-authoring contract, design source for `pko create-app`). Refresh with
 `uv run python scripts/sync_vendor.py`; check staleness with `--check`. Never
 hand-edit files under `vendor/` — see `vendor/manifest.json`.
 
+## Development
+
+### Enforcing vendor freshness
+
+Vendored upstream files (see "Vendored files" above) can silently drift —
+nothing breaks locally when pinokiod/proto change upstream, so staleness has
+to be actively checked. Two layers catch this:
+
+1. **Pre-commit hook (local, opt-in)** — `.githooks/pre-commit` runs
+   `scripts/sync_vendor.py --check` before every commit and blocks it if
+   vendor files are stale. Not enabled by default (git doesn't auto-discover
+   hooks outside `.git/hooks/`); opt in once per clone:
+   ```bash
+   git config core.hooksPath .githooks
+   ```
+   Requires network (calls the GitHub API to resolve latest upstream SHAs;
+   no content is downloaded for `--check`). Offline commits: `git commit --no-verify`.
+
+2. **CI (`.github/workflows/ci.yml`)** — runs `sync_vendor.py --check` on
+   every push/PR, plus a weekly cron (Mondays) so drift surfaces even when
+   nobody touches the repo for a while. This is the backstop for anyone who
+   didn't opt into the local hook.
+
+Neither layer auto-fixes anything — both only *detect* staleness. Refreshing
+is always a manual, reviewed step: `uv run python scripts/sync_vendor.py`,
+then read the diff before committing (upstream skill/AGENTS.md content
+changes can be substantive, not just typo fixes).
+
 ## Commands
 
 ### Instance Discovery

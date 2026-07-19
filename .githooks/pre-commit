@@ -1,0 +1,30 @@
+#!/usr/bin/env bash
+# pko pre-commit hook: fail the commit if vendored upstream files are stale.
+#
+# Install (opt-in, not automatic — see README.md "Development"):
+#   git config core.hooksPath .githooks
+#
+# This calls the GitHub API to resolve the latest upstream commit SHA for
+# each vendored file (see vendor/manifest.json). No content is downloaded;
+# --check only compares SHAs. Requires network — if you're offline, this
+# hook will fail closed (non-zero exit) rather than silently pass. Skip with
+# `git commit --no-verify` if you need to commit offline.
+set -euo pipefail
+
+cd "$(git rev-parse --show-toplevel)"
+
+if ! command -v uv >/dev/null 2>&1; then
+  echo "pre-commit: uv not found, skipping vendor check" >&2
+  exit 0
+fi
+
+echo "pre-commit: checking vendored upstream files (scripts/sync_vendor.py --check)..."
+if ! uv run python scripts/sync_vendor.py --check; then
+  echo "" >&2
+  echo "pre-commit: vendored files are stale. Run:" >&2
+  echo "    uv run python scripts/sync_vendor.py" >&2
+  echo "then review the diff and commit the refreshed vendor/ files (or their" >&2
+  echo "consequences) alongside your change. To bypass this check for an" >&2
+  echo "unrelated commit, use: git commit --no-verify" >&2
+  exit 1
+fi
