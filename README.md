@@ -88,7 +88,7 @@ from scratch.
 | [`pinokiocomputer/pinokio`](https://github.com/pinokiocomputer/pinokio) | Electron desktop app — GUI, install flow, discover/community integration |
 | [`pinokiocomputer/pinokiod`](https://github.com/pinokiocomputer/pinokiod) | The actual server daemon pko talks to — HTTP/WS API, logging, kernel |
 | [`pinokiocomputer/proto`](https://github.com/pinokiocomputer/proto) | Project scaffolding + `AGENTS.md` template used to bootstrap new Pinokio launcher projects (app-authoring conventions, not pko itself) |
-| [`pinokiocomputer/home`](https://github.com/pinokiocomputer/home) | Referenced but not found (404) as of this research — re-check if it appears later |
+| [`pinokiocomputer/home`](https://github.com/pinokiocomputer/home) | Pinokio's canonical docs site source (`docs/README.md` = the `PINOKIO.md` referenced by `proto`'s AGENTS.md). Covers the platform overview, auto-launch, app **orchestration**/dependency graphs (`PINOKIO_SCRIPT_REQUIRES`), and the built-in **Agent Interpreter** layer (`~/.agents/skills`, agent-facing app discovery) — directly relevant to pko's agent-skills goals. Not indexed by deepwiki as of ADR-002; re-check indexing status before falling back to raw `web_extract` of `docs/README.md` |
 | [Pinokio Desktop Manual](https://desktop.pinokio.co/docs/#/) | End-user docs for the desktop app — overview/TOC only, no orchestrator API detail |
 | `docs/adr/ADR-LOG.md` (this repo) | Our own research notes/decisions distilled from the above, with citations |
 

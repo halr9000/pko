@@ -116,9 +116,35 @@ on-disk log tree for an installed app (`pinokio-hello-world.git`).
    give users a good CLI-equivalent experience; the good tooling exists
    server-side but has no non-browser client today.
 
-5. **`pinokiocomputer/home`** — repository does not exist / returns 404 on
-   both GitHub raw content and deepwiki indexing as of this research. No
-   AGENTS.md or other content available from that source; skipped.
+5. **`pinokiocomputer/home`** — **CORRECTION (2026-07-19, later same day):** this repo
+   is valid and highly relevant; the earlier "repository not found" note below was
+   wrong — deepwiki simply hadn't indexed it yet (an indexing job was submitted and a
+   retry is scheduled). Confirmed live via direct `web_extract` of
+   `docs/README.md` on the `main` branch. This is Pinokio's canonical docs source —
+   the very `PINOKIO.md` that `proto`'s `AGENTS.md` repeatedly points app authors to
+   for API syntax. Contents relevant to pko:
+   - **§4 Orchestration** — apps declare dependencies via
+     `PINOKIO_SCRIPT_REQUIRES=<app1>,<app2>` in their `ENVIRONMENT` file. Launching
+     an app recursively resolves and starts its dependency graph first, waiting for
+     each to reach a "ready" state (the same readiness signal used by the `ready()`
+     script API) before continuing. This means **`pko start <app>` cannot assume a
+     single script execution** — it may need to observe/wait on a chain of
+     dependent app launches. Relevant to the *stub* `start`/`stop` implementation
+     work, not directly to the logs redesign, but should inform Phase (post-logs)
+     planning for those commands.
+   - **§5 Agent Interpreter** — Pinokio ships a *built-in* agent-facing layer:
+     auto-generated `SKILL.md` files under `~/.agents/skills` for every installed
+     app, standard discovery, auto-start-if-not-running, and reusable generated
+     clients. This is conceptually adjacent to (and possibly overlapping with) pko's
+     own "Built for agents (agent skills included)" vision item — worth a follow-up
+     ADR before further agent-skills work on pko, to decide whether pko's skills
+     complement or duplicate Pinokio's native ones.
+   - Superseded original note: ~~"repository not found. No AGENTS.md or other
+     content available"~~ — this was based on `deepwiki.read_wiki_structure` and
+     `read_wiki_contents` both returning "Repository not found" (deepwiki-side
+     indexing gap, not a real 404 — the repo exists and is public). No `AGENTS.md`
+     was found in this repo specifically (it's a docs-site repo, not a
+     launcher-project template like `proto`); the relevant file is `docs/README.md`.
 
 6. **`pinokiocomputer/proto`'s `AGENTS.md`** — confirms the *convention* app
    authors are told to follow when writing their own `pinokio.js` scripts:
@@ -187,8 +213,10 @@ subcommand shape:
 - `pinokiocomputer/proto` — `AGENTS.md` documented logs/ convention
   (`api/`, `dev/`, `shell/` subdirs, timestamp+`latest` naming) — via web_extract
   of raw AGENTS.md and deepwiki.
-- `pinokiocomputer/home` — repository not found (404), not indexed by deepwiki;
-  no content available, excluded from this ADR.
+- `pinokiocomputer/home` — CORRECTED: repo is valid, contains Pinokio's canonical
+  docs (`docs/README.md`, i.e. `PINOKIO.md`) including Orchestration and Agent
+  Interpreter sections — retrieved via direct `web_extract` (deepwiki indexing was
+  pending at time of writing; retry scheduled via cron job `deepwiki-retry-pinokio-home`).
 - Live instance inspection — `curl` against `localhost:42000` (`/api/logs/tree`,
   `/pinokio/logs/file`, `/pinokio/fs`), direct filesystem read of
   `~/pinokio/api/pinokio-hello-world.git/logs/**` and `~/pinokio/logs/**` on the
