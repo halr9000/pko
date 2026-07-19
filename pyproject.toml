@@ -1,6 +1,6 @@
 [project]
 name = "pko"
-version = "0.1.0"
+version = "0.2.0"
 description = "CLI for Pinokio — automate app lifecycle, config, and discovery via pinokiod"
 requires-python = ">=3.10"
 readme = "README.md"
