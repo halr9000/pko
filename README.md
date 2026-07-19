@@ -76,6 +76,22 @@ npx skills add owner/pko
 
 This installs the skills to your agent's skill directory (e.g., `~/.hermes/skills/` for Hermes Agent, `~/.claude/skills/` for Claude Code). The `npx skills` CLI supports 70+ agents including Hermes, OpenClaw, Claude Code, Codex, Cursor, and more.
 
+## Sources
+
+Reference material for pinokiod's API/protocol and app-authoring conventions. When
+asked to "check sources," use `deepwiki` (`ask_question`/`read_wiki_contents`)
+against these repos, or `web_extract`/`browser` for the docs site — don't re-derive
+from scratch.
+
+| Source | What it is |
+|---|---|
+| [`pinokiocomputer/pinokio`](https://github.com/pinokiocomputer/pinokio) | Electron desktop app — GUI, install flow, discover/community integration |
+| [`pinokiocomputer/pinokiod`](https://github.com/pinokiocomputer/pinokiod) | The actual server daemon pko talks to — HTTP/WS API, logging, kernel |
+| [`pinokiocomputer/proto`](https://github.com/pinokiocomputer/proto) | Project scaffolding + `AGENTS.md` template used to bootstrap new Pinokio launcher projects (app-authoring conventions, not pko itself) |
+| [`pinokiocomputer/home`](https://github.com/pinokiocomputer/home) | Referenced but not found (404) as of this research — re-check if it appears later |
+| [Pinokio Desktop Manual](https://desktop.pinokio.co/docs/#/) | End-user docs for the desktop app — overview/TOC only, no orchestrator API detail |
+| `docs/adr/ADR-LOG.md` (this repo) | Our own research notes/decisions distilled from the above, with citations |
+
 ## Commands
 
 ### Instance Discovery

@@ -45,7 +45,7 @@
 | Port management | `GET /pinokio/port` | HTTP GET |
 | Restart server | `POST /restart` | HTTP POST |
 | Health check | `GET /check` | HTTP GET |
-| Logs | `GET /getlog?logpath=...` | HTTP GET |
+| Logs | `GET /getlog?logpath=...` (legacy) + `GET /api/logs/tree`, `GET /api/logs/stream`, `GET /pinokio/logs/file` (see ADR-002) | HTTP GET / SSE |
 | Proxy management | `GET /proxy`, `POST /proxy` | HTTP GET/POST |
 | Cloudflare tunnel | `POST /publish`, `POST /unpublish` | HTTP POST |
 
@@ -190,3 +190,66 @@ Bugs discovered:
 - **pinokiod #1**: `/pinokio/fs?drive=api&path=/` returns 500 on fresh install (tries to stat `/index.html` before homedir is fully initialized). pko handles this gracefully (returns `[]`).
 - **pinokiod #2**: `/pinokio/info` shows empty `homedir` on fresh npm install. Server works but missing env setup.
 - Both are upstream pinokiod quirks, not pko bugs.
+
+## Logs Command Redesign (ADR-002)
+
+Full research and rationale: `docs/adr/ADR-LOG.md` (ADR-002). Summary below —
+read the ADR before touching `logs` code, it has the endpoint contracts and
+verified example responses.
+
+### Endpoints in play
+
+| Endpoint | Purpose | Notes |
+|---|---|---|
+| `GET /api/logs/tree?workspace=<app>&path=<subpath>` | List logs (discovery) | Omit `workspace` for server-level tree |
+| `GET /api/logs/stream?workspace=<app>&path=<relpath>` | Follow/tail (SSE) | `snapshot` event then `chunk` events; 2s keep-alive |
+| `GET /pinokio/logs/file?workspace=<app>&path=<relpath>&tail_lines=N` | Read a top-level text log | Rejects nested per-script files (400) |
+| `GET /getlog?logpath=<absolute path>` | Legacy fallback read | No tail/follow; needed for files `/pinokio/logs/file` rejects (e.g. `api/<script>.js/events`) |
+| `POST /pinokio/log` + `GET /pinokio/logs.zip` | Full redacted archive | "download everything" escape hatch, keep as `--zip` flag |
+
+### On-disk log layout (confirmed live)
+
+```
+<PINOKIO_HOME>/logs/                          # server-level
+├── stdout.txt                                # global stdout/stderr (may be absent — see ADR)
+├── system.json                                # periodic system/process snapshot
+├── shell/                                     # pinokiod-managed root shell (e.g. caddy)
+└── caddy.log, caddy-<ts>.log                  # bundled reverse proxy logs
+
+<PINOKIO_HOME>/api/<app>/logs/                # per-app
+├── sessions/index.json                        # session index, ended_at:null = still running
+├── sessions/<id>.json                          # one session record (which scripts ran, when)
+└── api/<script>.js/
+    ├── <timestamp>                             # one transcript per execution
+    ├── latest                                  # most recent transcript
+    └── events                                  # structured step-lifecycle log, ISO timestamps
+```
+
+### Phased implementation
+
+**Phase A — discovery & basic read (blocks everything else)**
+1. `client.py`: add `list_log_tree(workspace: str | None, path: str = "") -> dict` wrapping `/api/logs/tree`
+2. `client.py`: add `read_log_file(workspace, path, tail_lines=None) -> dict` wrapping `/pinokio/logs/file`, falling back to `/getlog` with the resolved absolute path when the server rejects a nested path (400)
+3. `main.py`: `pko logs --list [APP]` — render the tree as a table (name, type, size, modified)
+4. `main.py`: `pko logs [APP]` — default to reading `api/<most-recent-script>.js/latest` for an app (resolve "most recent script" from `sessions/index.json`'s `latest_session`), or `logs/stdout.txt` for `--server`/no-APP
+5. Tests: mock `httpx` responses for tree + file read, plus one integration test hitting the live instance's real tree
+
+**Phase B — follow (SSE)**
+6. `client.py`: add `stream_log(workspace, path) -> AsyncIterator[dict]` using `httpx.AsyncClient.stream("GET", ...)`, parsing `event:`/`data:` SSE framing, yielding `{"event": "snapshot"|"chunk"|"server-error", "data": {...}}`
+7. `main.py`: `--follow`/`-f` flag — print `snapshot` then stream `chunk` events to console until Ctrl+C
+8. Tests: mock an SSE byte stream, assert snapshot + chunk parsing
+
+**Phase C — filtering (best-effort, document as approximate)**
+9. `--lines N`/`-n` — pass `tail_lines` where the endpoint supports it, else slice client-side
+10. `--search TEXT` — client-side substring/regex filter applied to fetched/streamed lines
+11. `--level LEVEL` — heuristic filter matching common ERROR/WARN/INFO markers (no native pinokiod taxonomy — must say so in `--help`)
+12. `--since DURATION` — file-mtime filter for tree listing; line-timestamp filter for `events`-format files only
+
+**Phase D — polish**
+13. `--zip` — trigger `POST /pinokio/log` + report the download URL (mirrors Desktop's "Debug" button)
+14. Update `AGENTS.md`/skills with the new logs usage patterns for the three user stories in ADR-002
+15. Update README command table + `pko logs --help`
+
+### Breaking change note
+The old `pko logs --path PATH --tail N` interface (single flat `/getlog` call)
+is fully superseded. Acceptable pre-1.0 — no back-compat shim planned.
