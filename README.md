@@ -9,6 +9,8 @@ uvx pko info               # System information
 uvx pko status comfyui     # Check if an app is running
 ```
 
+> `uvx` runs a Python tool with zero install, via [uv](https://docs.astral.sh/uv/) — see [Prerequisites](#prerequisites) below if you don't have it yet (or use the pip equivalents throughout this doc).
+
 ## Why pko?
 
 | Feature | What it does |
@@ -24,7 +26,7 @@ uvx pko status comfyui     # Check if an app is running
 
 ### Prerequisites
 
-- Python 3.10+ with [uv](https://docs.astral.sh/uv/) (recommended) or pip
+- **Python 3.10+** with [uv](https://docs.astral.sh/uv/) (recommended) or pip. New to uv? It's a fast Python package/tool manager from Astral — install it with `curl -LsSf https://astral.sh/uv/install.sh | sh` (macOS/Linux) or `powershell -c "irm https://astral.sh/uv/install.ps1 | iex"` (Windows), or see the [official install guide](https://docs.astral.sh/uv/getting-started/installation/) for other methods (Homebrew, pipx, etc). No uv? Every command below has a pip fallback.
 - A running Pinokio instance (default: `localhost:42000`)
 
 ### Zero-install (uv)
