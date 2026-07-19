@@ -103,34 +103,6 @@ app-authoring contract, design source for `pko create-app`). Refresh with
 `uv run python scripts/sync_vendor.py`; check staleness with `--check`. Never
 hand-edit files under `vendor/` — see `vendor/manifest.json`.
 
-## Development
-
-### Enforcing vendor freshness
-
-Vendored upstream files (see "Vendored files" above) can silently drift —
-nothing breaks locally when pinokiod/proto change upstream, so staleness has
-to be actively checked. Two layers catch this:
-
-1. **Pre-commit hook (local, opt-in)** — `.githooks/pre-commit` runs
-   `scripts/sync_vendor.py --check` before every commit and blocks it if
-   vendor files are stale. Not enabled by default (git doesn't auto-discover
-   hooks outside `.git/hooks/`); opt in once per clone:
-   ```bash
-   git config core.hooksPath .githooks
-   ```
-   Requires network (calls the GitHub API to resolve latest upstream SHAs;
-   no content is downloaded for `--check`). Offline commits: `git commit --no-verify`.
-
-2. **CI (`.github/workflows/ci.yml`)** — runs `sync_vendor.py --check` on
-   every push/PR, plus a weekly cron (Mondays) so drift surfaces even when
-   nobody touches the repo for a while. This is the backstop for anyone who
-   didn't opt into the local hook.
-
-Neither layer auto-fixes anything — both only *detect* staleness. Refreshing
-is always a manual, reviewed step: `uv run python scripts/sync_vendor.py`,
-then read the diff before committing (upstream skill/AGENTS.md content
-changes can be substantive, not just typo fixes).
-
 ## Commands
 
 ### Instance Discovery
@@ -262,7 +234,7 @@ The AGENTS.md file at the project root is the entry point for Hermes, Codex, and
 ## Development
 
 ```bash
-git clone https://github.com/your-org/pko
+git clone https://github.com/halr9000/pko
 cd pko
 uv sync
 uv run pko discover
@@ -273,6 +245,32 @@ uv run pko discover
 ```bash
 uv run pytest
 ```
+
+### Enforcing vendor freshness
+
+Vendored upstream files (see "Vendored files" above) can silently drift —
+nothing breaks locally when pinokiod/proto change upstream, so staleness has
+to be actively checked. Two layers catch this:
+
+1. **Pre-commit hook (local, opt-in)** — `.githooks/pre-commit` runs
+   `scripts/sync_vendor.py --check` before every commit and blocks it if
+   vendor files are stale. Not enabled by default (git doesn't auto-discover
+   hooks outside `.git/hooks/`); opt in once per clone:
+   ```bash
+   git config core.hooksPath .githooks
+   ```
+   Requires network (calls the GitHub API to resolve latest upstream SHAs;
+   no content is downloaded for `--check`). Offline commits: `git commit --no-verify`.
+
+2. **CI (`.github/workflows/ci.yml`)** — runs `sync_vendor.py --check` on
+   every push/PR, plus a weekly cron (Mondays) so drift surfaces even when
+   nobody touches the repo for a while. This is the backstop for anyone who
+   didn't opt into the local hook.
+
+Neither layer auto-fixes anything — both only *detect* staleness. Refreshing
+is always a manual, reviewed step: `uv run python scripts/sync_vendor.py`,
+then read the diff before committing (upstream skill/AGENTS.md content
+changes can be substantive, not just typo fixes).
 
 ### Project Structure
 
@@ -294,39 +292,39 @@ pko/
 
 ## Roadmap
 
-### Phase 1 — Core ✓
-- [x] Instance discovery (localhost + remote)
-- [x] Connection profiles
-- [x] List installed apps
-- [x] System info
-- [x] App status check
-- [x] Health check
-- [x] Delete app
-- [x] Server restart
-- [x] AGENTS.md + skills/
+### Phase 1 — Core ✅ Done
+- ✅ Instance discovery (localhost + remote)
+- ✅ Connection profiles
+- ✅ List installed apps
+- ✅ System info
+- ✅ App status check
+- ✅ Health check
+- ✅ Delete app
+- ✅ Server restart
+- ✅ AGENTS.md + skills/
 
 ### Phase 2 — Config & Environment
-- [ ] Config get/set (ENVIRONMENT file)
-- [ ] App env vars
-- [ ] Logs viewer
-- [ ] Proxy management
-- [ ] Cloudflare tunnel publish/unpublish
-- [ ] Disk usage
-- [ ] Port management
+- ⬜ Config get/set (ENVIRONMENT file)
+- ⬜ App env vars
+- ⬜ Logs viewer
+- ⬜ Proxy management
+- ⬜ Cloudflare tunnel publish/unpublish
+- ⬜ Disk usage
+- ⬜ Port management
 
 ### Phase 3 — Community & Discover
-- [ ] Community search (beta.pinokio.co)
-- [ ] Install from community
-- [ ] App notifications
-- [ ] Publish apps
+- ⬜ Community search (beta.pinokio.co)
+- ⬜ Install from community
+- ⬜ App notifications
+- ⬜ Publish apps
 
 ### Phase 4 — Advanced
-- [ ] WebSocket script execution (start/stop/stream)
-- [ ] Interactive prompt handling
-- [ ] Shell session management
-- [ ] OpenAPI spec contribution to pinokiod
-- [ ] Pinokio.js JSON Schema contribution
-- [ ] mDNS/Bonjour discovery contribution
+- ⬜ WebSocket script execution (start/stop/stream)
+- ⬜ Interactive prompt handling
+- ⬜ Shell session management
+- ⬜ OpenAPI spec contribution to pinokiod
+- ⬜ Pinokio.js JSON Schema contribution
+- ⬜ mDNS/Bonjour discovery contribution
 
 ## Upstream Contributions
 
