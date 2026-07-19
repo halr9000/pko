@@ -8,6 +8,22 @@ list and how to re-query them via deepwiki.
 
 ---
 
+## ADR-004: `info`/`status` rationalization — see PLAN.md
+
+Full ADR content lives in `PLAN.md`'s "`info` / `status` Rationalization
+(ADR-004)" section rather than duplicated here, since it's implementation-
+phase-heavy (13 tasks across 5 phases) and PLAN.md is the living roadmap
+doc. Summary: `info` currently conflates system diagnostics with app-runtime
+data (`running_scripts`, `apps`); `status` inefficiently depends on the same
+heavy `/pinokio/info` call instead of the lightweight WebSocket
+`check_status()` (which exists but is dead code). Proposal: `info` becomes
+system-only, `status` becomes app-runtime-only (WebSocket-based for single
+app), and a new `pko inspect <app>` command fills the "rich app metadata"
+gap neither command currently covers. Breaking change, acceptable pre-1.0.
+
+---
+
+
 ## ADR-003: Agent-skills boundary vs. Pinokio's built-in agent layer, and vendoring strategy (2026-07-19)
 
 ### Status

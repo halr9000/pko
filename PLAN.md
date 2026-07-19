@@ -319,3 +319,197 @@ Instead:
   per `proto`'s `agents.js` template renderer) rather than always using the
   generic vendored copy — likely yes for local instances, needs a fallback
   for pure-remote (no filesystem access) cases.
+
+## `info` / `status` Rationalization (ADR-004)
+
+### Problem: Confusing Overlap
+
+The current `info` and `status` commands have overlapping, poorly-bounded
+responsibilities that confuse users and create code debt:
+
+| Command | Current behavior | What it *should* be |
+|---------|-----------------|---------------------|
+| `pko info` | Shows system info (platform, arch, version, GPU, memory) **plus** a count of running scripts and the installed apps list | System health / diagnostics only |
+| `pko status [app]` | Calls `client.info()` internally to detect running scripts, then checks if an app is running. No direct WebSocket status check. | App-level runtime state only |
+| `pko status --all` | Lists all apps with running/stopped status, extracting URLs from running scripts data | App-level runtime state (all apps) |
+
+**Specific issues identified in code review (v0.2.0):**
+
+1. **`info` shows app-level data.** The `info` command renders `len(sys_info.running_scripts)` — a count of running apps — inside a panel titled "Pinokio @ ...". This is system-info-adjacent but intuitively belongs under `status`. Users seeing `pko info` output will reasonably ask "but which apps are those?" and need a second command.
+
+2. **`status` depends on `info` internally.** `status` calls `client.info()` (the same `GET /pinokio/info` HTTP call) to extract `running_scripts` and `apps`. This means `status` inherits all the overhead of the system-info endpoint (including GPU/memory data it never reads) just to get a running-scripts list. The dependency is inverted — `status` should be a lightweight, focused check.
+
+3. **`client.check_status()` is dead code.** The WebSocket-based `check_status(uri: str) -> bool` method in `client.py` (`src/pko/client.py:201-215`) sends a `{"uri": uri, "status": True}` packet and checks `data.get("data") is True`. It is never called by the CLI. It was written but never wired in — the `status` command uses `client.info()` instead.
+
+4. **`SystemInfo` model carries app-runtime fields.** The `SystemInfo` dataclass (`src/pko/models.py:47-56`) includes `running_scripts: list` and `apps: list` — fields that describe app-level runtime state, not system properties. They exist because `client.info()` returns the raw JSON blob from `GET /pinokio/info`, which includes `scripts` and `api` in the same response. This conflates two concerns in one data model.
+
+5. **No `pko info <app>` command.** Users familiar with `docker info` / `kubectl describe` type patterns may expect `pko info comfyui` to show app metadata (title, description, path, disk usage). Currently that requires `pko list` (which shows app names in a table) or reading `pinokio.js` directly. There is no single command to get rich metadata about a specific installed app.
+
+6. **`info` includes the installed apps list.** `SystemInfo.apps` mirrors what `pko list` shows. The `--json` flag on `info` outputs `running_scripts` count but not the `apps` list — so the overlap is inconsistent even within the same command.
+
+### Proposal: Clear Separation of Concerns
+
+Replace the `info`/`status` pair with three commands that have zero overlap:
+
+| Command | Scope | Data source | Output |
+|---------|-------|-------------|--------|
+| `pko info` | System health | `GET /pinokio/info` | Platform, arch, version, GPU, memory, home — **no** running scripts or apps |
+| `pko status [app]` | App runtime state | `client.check_status()` (WebSocket) | Running/stopped for one app |
+| `pko status --all` | All apps runtime | `client.info().running_scripts` + `client.list_apps()` | Table of all apps with running/stopped + URL |
+| `pko inspect <app>` | App metadata | `GET /pinokio/fs` → `pinokio.js` or `index.json` | Title, description, path, icon, disk usage |
+
+### Rationale
+
+- **`info`** becomes purely system-diagnostic — the command you run when you want to know "is the server alive and healthy?" It keeps `--json` for machine consumption.
+- **`status`** becomes app-centric — the command you run when you want to know "is my app running?" It uses the WebSocket-based `check_status()` for a single app (lightweight, direct) and falls back to the info endpoint's `running_scripts` only for `--all` (where you need the full list anyway).
+- **`inspect <app>`** fills the gap that users currently solve by guessing — a single command to get rich metadata about an installed app, including disk usage via `GET /du/:name`.
+
+### Breaking Changes
+
+This is a **breaking change** (acceptable pre-1.0):
+- `pko info` output changes: no more `running_scripts` count or apps list
+- `pko status` no longer depends on `client.info()` for single-app checks (now uses WebSocket)
+- `pko status --json` (if added) would have a different schema than current `info --json`
+- Any scripts or agents parsing `pko info --json` output will need to update
+
+### Implementation Phases
+
+#### Phase A: Separate `SystemInfo` model from app-runtime data
+
+**Objective:** Stop conflating system info with app state at the data model level.
+
+**Files:**
+- Modify: `src/pko/models.py`
+- Modify: `src/pko/client.py`
+
+**Task 1: Remove `running_scripts` and `apps` from `SystemInfo`**
+
+In `src/pko/models.py`, strip the two app-runtime fields:
+- Remove `running_scripts: list` from `SystemInfo`
+- Remove `apps: list` from `SystemInfo`
+
+**Task 2: Create `list_running_scripts()` method in client**
+
+In `src/pko/client.py`, add a method `client.list_running_scripts() -> list[dict]` that calls `GET /pinokio/info` but extracts **only** `data.get("scripts", [])` — this is what `status --all` needs.
+
+**Task 3: Run existing tests, fix breakage**
+
+Run: `uv run pytest tests/ -v -m "not integration"`
+Expected: Tests that construct `SystemInfo` with `running_scripts` or `apps` fail. Update them to use the new shape.
+
+#### Phase B: Fix `pko info` — system-only output
+
+**Objective:** `pko info` shows only system diagnostics.
+
+**Files:**
+- Modify: `src/pko/main.py` (info command)
+
+**Task 4: Strip running-scripts count from `info` output**
+
+In `src/pko/main.py` `info()` function:
+- Remove `len(sys_info.running_scripts)` from the `Panel` body
+- Remove `running_scripts` from the `--json` output dict
+- Remove the `apps` field from `--json` output (already absent, but ensure it stays absent)
+
+**Task 5: Update `info` tests**
+
+- Check that `info` output no longer mentions "running" or "script(s)"
+- Check that `info --json` no longer has `running_scripts` key
+
+#### Phase C: Wire `client.check_status()` into `pko status`
+
+**Objective:** `pko status <app>` uses the lightweight WebSocket check instead of the heavy `info` endpoint.
+
+**Files:**
+- Modify: `src/pko/main.py` (status command)
+- Tests: `tests/test_client.py` (test `check_status`)
+
+**Task 6: Test `check_status` WebSocket call**
+
+Write a unit test for `client.check_status()` that mocks the websocket connection and asserts the sent payload and received response. This is currently untested dead code.
+
+**Task 7: Wire `check_status` into single-app `status` path**
+
+In `src/pko/main.py` `status()` function:
+- For single-app mode (not `--all` and `app_name` is provided):
+  - Call `client.check_status(uri)` with the resolved URI for the app
+  - Print running/stopped accordingly
+  - Keep the "app not found" check (which requires reading installed apps — that's fine, it's a one-time upfront check)
+- For `--all` mode: keep using `client.info().running_scripts` (you need the full list anyway)
+
+**Task 8: Confirm `client.check_status()` is the only consumer path**
+
+Remove the `client.info()` call from the single-app `status` path. The `--all` path still calls it (for the full running scripts list), but the single-app path no longer does.
+
+#### Phase D: Add `pko inspect <app>` command
+
+**Objective:** A single command to get rich metadata about an installed app.
+
+**Files:**
+- Modify: `src/pko/main.py` (new `inspect` command)
+- Modify: `src/pko/client.py` (add `get_app_metadata` method)
+- Tests: `tests/test_client.py`, `tests/test_main.py`
+
+**Task 9: Add `client.get_app_metadata(name) -> AppInfo`**
+
+In `src/pko/client.py`:
+```python
+async def get_app_metadata(self, name: str) -> AppInfo | None:
+    \"\"\"Read pinokio.js (or index.json) + disk usage for an app.\"\"\"
+    script = await self.get_app_script(name)
+    if not script:
+        return None
+    du = await self.get_disk_usage(name)
+    return AppInfo(
+        name=name,
+        path=...,  # derive from name
+        title=script.title or name,
+        description=script.description or "",
+        icon=script.icon or "",
+        running=False,  # caller sets this if needed
+        disk_usage=du.result if du else "",
+    )
+```
+
+**Task 10: Add `pko inspect <app>` CLI command**
+
+In `src/pko/main.py`:
+```python
+@app.command()
+def inspect(
+    app_name: str = typer.Argument(..., help="App name to inspect"),
+    host: Optional[str] = typer.Option(None, "--host", ...),
+    port: Optional[int] = typer.Option(None, "--port", "-p", ...),
+):
+    \"\"\"Show detailed metadata for an installed app.\"\"\"
+    ...
+```
+Output: app name, title, description, path, disk usage, whether it's currently running.
+
+**Task 11: Update `AGENTS.md` and `README.md` command tables**
+
+- Replace `info` / `status` descriptions with the new semantics
+- Add `inspect` to the command table
+- Update the `pko info` example in AGENTS.md Quick Start
+
+#### Phase E: Clean up dead code
+
+**Objective:** Remove or repurpose `client.check_status()` if superseded, or keep it as the preferred path for single-app status checks.
+
+**Task 12: Keep `client.check_status()` as the canonical single-app path**
+
+`client.check_status()` is now the single-app path for `pko status`. It is no longer dead code. Update its docstring to reflect that it's the CLI's preferred path.
+
+**Task 13: Audit `info`/`status`/`inspect` for any remaining cross-contamination**
+
+- Ensure `info` never references `running_scripts` or `apps`
+- Ensure `status` single-app never calls `client.info()`
+- Ensure `inspect` doesn't duplicate `status` logic
+- Run full test suite: `uv run pytest tests/ -v`
+
+### Future Considerations
+
+- **`pko status --json`**: Could be added later for machine-readable output, using a different schema than `info --json`.
+- **`pko info --watch`**: A live-updating system dashboard (like `top` for Pinokio) — could show system info + running scripts count in a split view, but that's a separate feature.
+- **`pko inspect --json`**: Natural extension once `inspect` exists.
+- **Backward compatibility shim**: If needed, a `pko info --legacy` flag could restore the old combined output. Not recommended — pre-1.0 breaking changes are acceptable.
