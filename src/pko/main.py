@@ -35,7 +35,7 @@ from .models import PinokioInstance, DEFAULT_PORT, KNOWN_PORTS
 
 app = typer.Typer(
     name="pko",
-    help="Pinokio CLI — automate Pinokio instances from anywhere",
+    help="Pinokio CLI — automate Pinokio instances from anywhere. See 'pko COMMAND --help' for details; commands marked \\[Not implemented] are stubs.",
     no_args_is_help=True,
 )
 console = Console()
@@ -546,7 +546,7 @@ def install(
     host: Optional[str] = typer.Option(None, "--host", help="Pinokio host"),
     port: Optional[int] = typer.Option(None, "--port", "-p", help="Pinokio port"),
 ):
-    """Install an app from a git repository. [stub — not yet implemented]"""
+    """Install an app from a git repository. \\[Not implemented]"""
     console.print("[yellow]⚠[/yellow] Install via CLI is not yet implemented.")
     console.print("  For now, install apps through the Pinokio web UI:")
     console.print(f"  {_instance(host, port).base_url}/pinokio/install")
@@ -561,7 +561,7 @@ def start(
     host: Optional[str] = typer.Option(None, "--host", help="Pinokio host"),
     port: Optional[int] = typer.Option(None, "--port", "-p", help="Pinokio port"),
 ):
-    """Start an app. [stub — not yet implemented]"""
+    """Start an app. \\[Not implemented]"""
     inst = _instance(host, port)
     console.print(f"── {_label(inst)} ──")
     console.print("[yellow]⚠[/yellow] Start via CLI is not yet implemented.")
@@ -577,7 +577,7 @@ def stop(
     host: Optional[str] = typer.Option(None, "--host", help="Pinokio host"),
     port: Optional[int] = typer.Option(None, "--port", "-p", help="Pinokio port"),
 ):
-    """Stop a running app. [stub — not yet implemented]"""
+    """Stop a running app. \\[Not implemented]"""
     inst = _instance(host, port)
     console.print(f"── {_label(inst)} ──")
     console.print("[yellow]⚠[/yellow] Stop via CLI is not yet implemented.")
