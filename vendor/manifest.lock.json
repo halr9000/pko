@@ -1,0 +1,16 @@
+{
+  "files": {
+    "pinokio-skill": {
+      "sha": "89957c62bde6824c295a3ee97504691ee97a5625",
+      "source_repo": "pinokiocomputer/pinokiod",
+      "source_path": "prototype/system/SKILL_PINOKIO.md",
+      "dest": "vendor/pinokiod/SKILL_PINOKIO.md"
+    },
+    "proto-agents": {
+      "sha": "f46c872ba94448e6a85d26b6e4faabd7452206f1",
+      "source_repo": "pinokiocomputer/proto",
+      "source_path": "AGENTS.md",
+      "dest": "vendor/proto/AGENTS.md"
+    }
+  }
+}

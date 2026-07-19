@@ -92,6 +92,15 @@ from scratch.
 | [Pinokio Desktop Manual](https://desktop.pinokio.co/docs/#/) | End-user docs for the desktop app — overview/TOC only, no orchestrator API detail |
 | `docs/adr/ADR-LOG.md` (this repo) | Our own research notes/decisions distilled from the above, with citations |
 
+### Vendored files
+
+pko vendors two upstream files verbatim (see ADR-003) rather than duplicating
+their logic: `vendor/pinokiod/SKILL_PINOKIO.md` (Pinokio's own agent skill for
+single-instance runtime control) and `vendor/proto/AGENTS.md` (the
+app-authoring contract, design source for `pko create-app`). Refresh with
+`uv run python scripts/sync_vendor.py`; check staleness with `--check`. Never
+hand-edit files under `vendor/` — see `vendor/manifest.json`.
+
 ## Commands
 
 ### Instance Discovery

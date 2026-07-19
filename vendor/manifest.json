@@ -1,0 +1,21 @@
+{
+  "$schema_note": "Tracks single files vendored from pinokiocomputer upstream repos. Run scripts/sync_vendor.py to refresh dest files + manifest.lock.json from source_repo/ref/source_path. Do NOT hand-edit files under vendor/ — edits will be overwritten on next sync.",
+  "files": [
+    {
+      "id": "pinokio-skill",
+      "source_repo": "pinokiocomputer/pinokiod",
+      "source_path": "prototype/system/SKILL_PINOKIO.md",
+      "ref": "main",
+      "dest": "vendor/pinokiod/SKILL_PINOKIO.md",
+      "purpose": "Upstream's official pterm-first agent skill, installed by pinokiod itself into ~/.agents/skills/pinokio/SKILL.md on every machine running Pinokio. Covers runtime control of already-installed apps: search, launch, status polling, using apps (direct API calls or generated clients), logs, parallel mode. pko's own skills MUST NOT duplicate this logic for the single-local-instance case — when pterm/the pinokio skill is available, pko skills should defer to it. pko owns what this skill does not: remote/multi-instance orchestration, profile management, and operations run from outside any single Pinokio box."
+    },
+    {
+      "id": "proto-agents",
+      "source_repo": "pinokiocomputer/proto",
+      "source_path": "AGENTS.md",
+      "ref": "main",
+      "dest": "vendor/proto/AGENTS.md",
+      "purpose": "Canonical app-authoring guide stamped into every new Pinokio launcher project (also rendered to CLAUDE.md, .cursorrules, etc. by proto's agents.js module). Covers PINOKIO_HOME destination resolution, app-launcher vs plugin-launcher structure, script API reference, and best practices. This is the design source for pko's create-app command and informs pko's install command's destination-resolution logic."
+    }
+  ]
+}

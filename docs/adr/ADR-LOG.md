@@ -8,6 +8,204 @@ list and how to re-query them via deepwiki.
 
 ---
 
+## ADR-003: Agent-skills boundary vs. Pinokio's built-in agent layer, and vendoring strategy (2026-07-19)
+
+### Status
+Accepted
+
+### Context
+
+Following the ADR-002 correction that `pinokiocomputer/home` is a valid,
+richly documented repo, deeper research (deepwiki + direct code inspection of
+the running `pinokiod` npm package) surfaced that **Pinokio itself ships a
+built-in agent-facing layer** — not just documentation about one. This
+directly overlaps with pko's own "Built for agents (agent skills included)"
+vision item, and the user flagged the risk explicitly: avoiding a
+**split-brain problem** where pko's skills and Pinokio's built-in skills give
+an agent conflicting or duplicate instructions for the same operation.
+
+### What Pinokio ships natively (confirmed via source)
+
+`pinokiod/kernel/managed_skills.js` auto-generates and maintains two
+built-in `SKILL.md` files, written into every one of:
+```
+~/.agents/skills/<id>/SKILL.md
+~/.claude/skills/<id>/SKILL.md
+~/.hermes/skills/<id>/SKILL.md
+```
+(`publishRoots()`, `managed_skills.js:43-47`) — i.e. **Pinokio already
+installs itself into Hermes's own skill directory**, unprompted, whenever
+pinokiod runs, if it can write there.
+
+1. **`pinokio` skill** — sourced verbatim from
+   `pinokiod/prototype/system/SKILL_PINOKIO.md` (see vendoring below). This is
+   a **"pterm-first" runtime-control skill**: search installed apps
+   (`pterm search`), check status (`pterm status`), launch
+   (`pterm run <ref>`), poll for readiness, call the app's API directly or
+   generate a reusable per-app client, view logs (`pterm logs`), and a
+   "Parallel Mode" for explicitly multi-app/multi-machine tasks. Notably:
+   `pterm status`'s output already includes a `ref` field shaped
+   `pinokio://<host>:<port>/<scope>/<id>` and explicitly documents **cross-machine
+   results** (`source.local=false`) — i.e. Pinokio's own built-in skill already
+   has *some* multi-instance awareness via `pterm`'s registry, not just
+   single-box.
+
+2. **`gepeto` skill** — dynamically composed by wrapping the *target Pinokio
+   home's own* `AGENTS.md` (rendered from `proto`'s template at project-init
+   time) with a `name: gepeto` / `description: Guide for building 1-click
+   launchers...` frontmatter block (`managed_skills.js:308-321`). This is the
+   **app-authoring / launcher-building** skill — how to structure
+   `install.js`/`start.js`/`pinokio.js`/`pinokio.json`, PINOKIO_HOME
+   resolution, the full Script API reference, and best practices. This is
+   the exact content of `proto/AGENTS.md`, vendored below.
+
+3. Pinokio's own docs (`pinokiocomputer/home`, §5.2) confirm this works with
+   *external* agents too: "Codex CLI in terminal, Claude Code in terminal,
+   Codex Desktop, Gemini CLI, Cursor, Anything else" — plus explicit mention
+   of Hermes Agent and OpenClaw as example orchestrators (§5.3). Most
+   auto-discover `~/.agents/skills`; agents that don't (Claude Desktop) can
+   import the `SKILL.md` manually via a Settings-page download.
+
+### The actual boundary (per user's framing)
+
+The user's framing is the deciding design principle for this ADR: **where
+does the agent sit relative to the box?**
+
+- Pinokio's built-in `pinokio`/`gepeto` skills assume **the agent runs on
+  (or is invoked from within) a single Pinokio instance's own machine** —
+  `pterm` is a local binary, resolved via `~/.pinokio/config.json` or
+  `127.0.0.1:42000`. The skill's own resolution logic explicitly treats
+  loopback-unreachable as an exceptional, fallback-worthy case, not the
+  default assumption.
+- pko's premise is the opposite default: **the agent runs outside any
+  particular Pinokio box**, and may manage zero, one, or many boxes it
+  doesn't have local shell/filesystem access to at all (a phone-side agent
+  managing a homelab GPU rig over Tailscale, for example). pko's `client.py`
+  is HTTP/WS-only by construction — it never assumes local `pterm`,
+  `~/.pinokio/config.json`, or filesystem access to `PINOKIO_HOME`.
+
+This is not a cosmetic difference — it changes which failure modes and
+discovery steps matter. Pinokio's skill's Failure Handling section is about
+sandbox/permission errors resolving a *local* binary. pko's discovery
+(`pko discover`, profiles) is about finding and authenticating to a
+*network-reachable* instance in the first place, which the built-in skill
+doesn't attempt (it assumes exactly one instance, itself).
+
+### Decision
+
+1. **Do not duplicate `pterm`'s single-instance runtime-control logic in a
+   pko skill.** For any task where an agent already has local access to a
+   Pinokio instance and its own `pinokio`/`gepeto` skills (i.e. `pterm` /
+   `~/.pinokio/config.json` resolve successfully), **the correct outcome is
+   for the agent to just use those built-in skills** — pko's skill docs
+   should say so explicitly rather than re-teach `pterm search`/`run`/`status`.
+
+2. **pko's skills own only what upstream does not cover:**
+   - **Remote/multi-instance discovery and profile management** — `pko
+     discover`, `pko connect`, `pko profile` have no upstream equivalent;
+     `pterm`'s registry cross-machine awareness is opportunistic (results
+     from *reachable* peers), not a discovery/profile primitive an external
+     agent can drive.
+   - **Zero-local-access operation** — every pko operation works over
+     HTTP/WS from a machine with no `pterm` binary, no `~/.pinokio/`, and no
+     filesystem access to any `PINOKIO_HOME`. This is pko's entire reason to
+     exist and is explicitly *not* what the built-in skill is built for.
+   - **Cross-instance orchestration a single `pterm` invocation can't
+     express** — e.g. "check status on 3 named profiles and report which
+     ones have app X running" is a pko-shaped operation, not a `pterm`-shaped
+     one (the built-in skill's own "Parallel Mode" section still assumes
+     the invoking agent has local `pterm` and enumerates `ref`s from a
+     single local search).
+   - **Everything already planned and unique to pko**: logs redesign
+     (ADR-002; note `pterm logs` exists but is a thin CLI wrapper without the
+     tree/stream/filter feature set ADR-002 specifies), install (once
+     implemented), start/stop across profiles.
+
+3. **pko's `create-app` command wraps the `gepeto`-equivalent workflow, not
+   a new invention.** `proto/AGENTS.md` (vendored, see below) is the design
+   source: it defines the full app-authoring contract — mandatory
+   `PINOKIO_HOME` resolution order, app-launcher (`api/`) vs. plugin-launcher
+   (`plugin/`) destination rules, the four-part project shape (`pinokio.json`
+   config, `ENVIRONMENT`, script files, `pinokio.js` launcher UI), the full
+   Script API surface, and numbered best practices (retrofitting existing
+   working setups, AI-bundle declarations for torch/xformers, gitignore
+   rules, cross-platform command preferences, etc.). **`pko create-app`
+   should not reimplement any of this reasoning** — it should shell out to
+   (or programmatically drive) whatever AI-agent-assisted flow the user
+   already has available, primed with this exact document as context,
+   mirroring what Pinokio's own "Create" button does per `home`'s §5
+   (prompt → agent/IDE selection → AI-assisted build → Run → Publish).
+   Concretely this likely means: `pko create-app <name>` resolves
+   `PINOKIO_HOME` the same way `proto/AGENTS.md` specifies, scaffolds the
+   destination folder, and either (a) hands off to a `delegate_task`-style
+   agent invocation loaded with the vendored `AGENTS.md` as its brief, or
+   (b) if pko is being driven by an agent that already has this skill
+   installed, simply documents the contract for that agent to follow
+   directly — **not** duplicate logic that would drift from upstream.
+   This confirms **`create-app` and `install` are related but distinct**:
+   `create-app` produces a *new* launcher project from scratch (writes
+   `install.js`/`start.js`/`pinokio.js`/`pinokio.json` following the
+   `proto/AGENTS.md` contract); `install` (still a stub) takes an *existing*
+   git URL pointing at an already-built launcher project and clones it into
+   `PINOKIO_HOME/api/`. `create-app` may call `install`-equivalent logic at
+   the end (registering the freshly-created project with the running
+   instance) but they are not the same operation and should not be merged
+   into one command.
+
+4. **Vendoring mechanism.** Rather than a git submodule/subtree (too heavy
+   for two files, and subtree pulls the whole upstream repo history), pko
+   vendors these two files via a small manifest-driven sync script:
+   - `vendor/manifest.json` — human-edited: which files, from which
+     repo/path/ref, why (rationale field required per entry).
+   - `vendor/manifest.lock.json` — machine-generated: the exact upstream
+     commit SHA each vendored file was last synced from. Committed to git so
+     drift is visible in review (`git diff` on the lock file = "upstream
+     changed since we last looked").
+   - `scripts/sync_vendor.py` — zero-dependency (stdlib `urllib` only, works
+     without `uv sync` first) script with two modes: default (fetch+write),
+     `--check` (CI-friendly: resolve latest upstream SHA via GitHub API,
+     compare to lock, exit 1 if stale, no content fetch/write).
+   - Vendored files are **never hand-edited** — the manifest documents this
+     and `sync_vendor.py`'s docstring repeats it. Any local adjustment must
+     happen in pko's own code/docs that *reference* the vendored file, not
+     in the vendored copy itself.
+
+### Consequences
+
+- New `vendor/` directory tracked in git (not gitignored) — the whole point
+  is these files are committed so `git diff` shows upstream drift.
+- `scripts/sync_vendor.py --check` should be added to CI (not yet wired —
+  tracked as follow-up in PLAN.md) so stale vendor files surface as a build
+  signal rather than silent drift.
+- pko's own future `skills/pko-*` SKILL.md files must each state, in their
+  own text, "if `pterm`/the `pinokio` skill is available and reachable
+  locally, prefer it for \<X\>" where applicable, rather than silently
+  overlapping.
+- `create-app` implementation (not yet started) is now scoped: it is an
+  agent-hand-off / scaffolding command primed by `vendor/proto/AGENTS.md`,
+  not a from-scratch reimplementation of Pinokio's launcher-authoring rules.
+- This ADR does *not* resolve exactly how the create-app hand-off is wired
+  (subagent delegation vs. printing the brief vs. something else) — that is
+  implementation-phase work, tracked in PLAN.md's Create App section.
+
+### Sources
+- `pinokiocomputer/pinokiod` — `kernel/managed_skills.js` (`BUILTIN_SKILLS`,
+  `publishRoots`, `composeBuiltinSkillContent`, `syncBuiltinSourceFiles`) —
+  direct source read of the running npm package (v8.0.36).
+- `pinokiocomputer/pinokiod` — `prototype/system/SKILL_PINOKIO.md` — direct
+  source read + vendored verbatim, commit `89957c62bde6` on `main`
+  (see `vendor/manifest.lock.json`).
+- `pinokiocomputer/proto` — `AGENTS.md` — vendored verbatim, commit
+  `f46c872ba944` on `main` (see `vendor/manifest.lock.json`).
+- `pinokiocomputer/home` — `docs/README.md` §5 "Agent Interpreter" (via
+  `web_extract`, deepwiki indexing was still pending at time of writing) —
+  confirms the `~/.agents/skills` convention, external-agent compatibility
+  list, and the Pinokio-side "Create" UI workflow this ADR's `create-app`
+  design should mirror.
+
+---
+
+
 ## ADR-002: Logs command redesign (2026-07-19)
 
 ### Status

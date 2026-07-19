@@ -253,3 +253,68 @@ verified example responses.
 ### Breaking change note
 The old `pko logs --path PATH --tail N` interface (single flat `/getlog` call)
 is fully superseded. Acceptable pre-1.0 — no back-compat shim planned.
+
+## Vendored Upstream Files (ADR-003)
+
+pko explicitly depends on two files pinokiod/proto ship for agent use, kept
+in sync via `scripts/sync_vendor.py` rather than a submodule/subtree (see
+`docs/adr/ADR-LOG.md` ADR-003 for full rationale):
+
+| File | From | Purpose |
+|---|---|---|
+| `vendor/pinokiod/SKILL_PINOKIO.md` | `pinokiocomputer/pinokiod` `prototype/system/SKILL_PINOKIO.md` | Upstream's own agent skill for single-instance runtime control (`pterm search/run/status/logs`). pko's skills must defer to this when a local Pinokio instance is reachable — not duplicate it. |
+| `vendor/proto/AGENTS.md` | `pinokiocomputer/proto` `AGENTS.md` | The app-authoring contract (PINOKIO_HOME resolution, launcher project structure, Script API reference). Design source for `pko create-app`. |
+
+```bash
+# Refresh vendored files to latest upstream commit
+uv run python scripts/sync_vendor.py
+
+# CI-friendly: check if vendor files are stale (no writes, exits 1 if stale)
+uv run python scripts/sync_vendor.py --check
+```
+
+`vendor/manifest.json` records *why* each file is vendored; `vendor/manifest.lock.json`
+records the exact upstream commit SHA — never hand-edit files under `vendor/`.
+
+**Follow-up**: wire `sync_vendor.py --check` into CI once pko has a CI
+pipeline (not yet set up).
+
+## Create App Command (ADR-003)
+
+**Status: design scoped, not yet implemented.**
+
+Per ADR-003, `create-app` is a **distinct command from `install`**:
+- `install <git-url>` (still a stub) — clones an *existing* launcher project into `PINOKIO_HOME/api/`.
+- `create-app <name>` — scaffolds a *new* launcher project from scratch, following the exact contract in `vendor/proto/AGENTS.md`.
+
+`create-app` should not reimplement `proto/AGENTS.md`'s reasoning (PINOKIO_HOME
+resolution order, app-launcher vs. plugin-launcher structure, Script API
+choices, best practices like AI-bundle declarations or gitignore rules).
+Instead:
+
+1. Resolve `PINOKIO_HOME` the same way `vendor/proto/AGENTS.md` §"Mandatory
+   Destination Resolution" specifies (config.json → `/pinokio/home` HTTP →
+   env var → ask user).
+2. Scaffold the destination folder under `PINOKIO_HOME/api/<name>` (or
+   `PINOKIO_HOME/plugin/<name>` if the user wants a plugin launcher).
+3. Hand off the actual script-writing work to an AI-agent-assisted flow
+   primed with `vendor/proto/AGENTS.md` as its brief — mirroring what
+   Pinokio's own "Create" button does (prompt → agent/IDE → AI-assisted
+   build → Run → Publish, per `pinokiocomputer/home` §5). Exact hand-off
+   mechanism (subagent delegation vs. printing the brief for the invoking
+   agent to follow vs. something else) is not yet decided — needs a design
+   pass before implementation starts.
+4. Optionally call `install`-equivalent logic at the end to register the
+   freshly-created project with a running instance — but `create-app` and
+   `install` remain separate commands, not merged.
+
+### Open questions (pre-implementation)
+- Exact hand-off mechanism for step 3 (see above).
+- Whether `create-app` needs its own `--agent <name>` flag (mirroring
+  Pinokio's own agent/IDE picker) or always assumes "whatever agent is
+  driving pko right now."
+- Whether pko should read the *target* Pinokio instance's own rendered
+  `AGENTS.md` (which may have project-specific template variables filled in,
+  per `proto`'s `agents.js` template renderer) rather than always using the
+  generic vendored copy — likely yes for local instances, needs a fallback
+  for pure-remote (no filesystem access) cases.
