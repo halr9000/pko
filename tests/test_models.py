@@ -35,13 +35,11 @@ class TestSystemInfo:
             version="8.0.36",
             memory={"total": 16000000, "free": 8000000},
             gpu={"model": "Intel"},
-            running_scripts=[{"app": "comfyui"}],
             home="/home/user/pinokio",
         )
         assert info.platform == "linux"
         assert info.memory["total"] == 16000000
         assert info.home == "/home/user/pinokio"
-        assert len(info.running_scripts) == 1
 
 
 class TestWsPacket:

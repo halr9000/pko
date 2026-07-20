@@ -29,6 +29,9 @@ uvx pko info
 
 # Check app status
 uvx pko status comfyui
+
+# Rich metadata for one app
+uvx pko inspect comfyui
 ```
 
 ## API Design
@@ -43,8 +46,9 @@ pko wraps the pinokiod HTTP + WebSocket API into a clean CLI. All commands accep
 | `connect` | Save a connection profile | 1 |
 | `profile` | Manage connection profiles | 1 |
 | `list` | List installed apps | 1 |
-| `info` | System information | 1 |
-| `status` | Check if an app is running | 1 |
+| `info` | System information (diagnostics only) | 1 |
+| `status` | Check if an app is running (WebSocket probe for single app; `--all` lists everyone) | 1 |
+| `inspect` | Rich per-app metadata: title, description, disk usage, running state | 1 |
 | `config` | Get/set environment configuration | 2 |
 | `logs` | View server logs | 2 |
 | `restart` | Restart the server | 2 |
@@ -83,6 +87,7 @@ pko/
 |----------|--------|---------|
 | `/check` | GET | Health check → `{success: true}` |
 | `/pinokio/info` | GET | System info (platform, arch, memory, GPU, version) |
+| `/apps/status/:id` | GET | Rich per-app status (running/ready state, title, description, icon, ready_url) — discovered via vendored pterm/util.js reference, see ADR-004/ADR-005 |
 | `/pinokio/port` | GET | Get an available port → `{result: number}` |
 | `/pinokio/fs?drive=api&path=/` | GET | List installed apps |
 | `/pinokio/fs?drive=api&path=<name>/pinokio.js` | GET | Read app metadata |

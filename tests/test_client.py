@@ -70,7 +70,35 @@ class TestClientInfo:
             assert info.version == {"pinokiod": "8.0.36"}
             assert info.memory["total"] == 16000000
             assert info.home == "/home/user/pinokio"
-            assert len(info.running_scripts) == 1
+            assert not hasattr(info, "running_scripts")
+            assert not hasattr(info, "apps")
+            await c.close()
+
+
+class TestClientListRunningScripts:
+    async def test_returns_scripts(self):
+        mock_data = {
+            "scripts": [{"app": "comfyui", "local": {"url": "http://localhost:7860"}}],
+        }
+
+        async def mock_get(*a, **kw):
+            return httpx.Response(200, json=mock_data)
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            scripts = await c.list_running_scripts()
+            assert len(scripts) == 1
+            assert scripts[0]["app"] == "comfyui"
+            await c.close()
+
+    async def test_empty_on_error(self):
+        async def mock_get(*a, **kw):
+            return httpx.Response(500)
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            scripts = await c.list_running_scripts()
+            assert scripts == []
             await c.close()
 
 
@@ -170,6 +198,155 @@ class TestClientConfig:
             await c.close()
 
 
+class TestClientGetAppStatus:
+    async def test_running(self):
+        mock_data = {
+            "app_id": "testapp",
+            "running": True,
+            "ready_url": "http://127.0.0.1:7860",
+            "title": "Test App",
+        }
+
+        async def mock_get(*a, **kw):
+            return httpx.Response(200, json=mock_data)
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            status = await c.get_app_status("testapp")
+            assert status is not None
+            assert status["running"] is True
+            assert status["ready_url"] == "http://127.0.0.1:7860"
+            await c.close()
+
+    async def test_not_found(self):
+        async def mock_get(*a, **kw):
+            return httpx.Response(404)
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            status = await c.get_app_status("nonexistent")
+            assert status is None
+            await c.close()
+
+
+class TestClientGetAppMetadata:
+    async def test_found_via_status_endpoint(self):
+        mock_status = {
+            "app_id": "testapp",
+            "title": "Test App",
+            "description": "A test",
+            "icon": "icon.png",
+            "path": "/pinokio/api/testapp",
+            "running": True,
+        }
+
+        async def mock_get(*a, **kw):
+            url = str(a[1]) if len(a) > 1 else ""
+            if "/du/" in url:
+                return httpx.Response(200, text="1.2GB")
+            return httpx.Response(200, json=mock_status)
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            meta = await c.get_app_metadata("testapp")
+            assert meta is not None
+            assert meta.name == "testapp"
+            assert meta.title == "Test App"
+            assert meta.description == "A test"
+            assert meta.running is True
+            await c.close()
+
+    async def test_falls_back_to_pinokio_js(self):
+        mock_meta = {"title": "Test App", "description": "A test", "icon": "icon.png"}
+
+        async def mock_get(*a, **kw):
+            url = str(a[1]) if len(a) > 1 else ""
+            if "/apps/status/" in url:
+                return httpx.Response(404)
+            if "/du/" in url:
+                return httpx.Response(200, text="1.2GB")
+            return httpx.Response(200, json=mock_meta)
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            meta = await c.get_app_metadata("testapp")
+            assert meta is not None
+            assert meta.name == "testapp"
+            assert meta.title == "Test App"
+            assert meta.running is False
+            await c.close()
+
+    async def test_not_found(self):
+        async def mock_get(*a, **kw):
+            return httpx.Response(404)
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            meta = await c.get_app_metadata("nonexistent")
+            assert meta is None
+            await c.close()
+
+
+class TestWsClientCheckStatus:
+    async def test_running(self):
+        class FakeWs:
+            async def send(self, data):
+                pass
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if getattr(self, "_sent", False):
+                    raise StopAsyncIteration
+                self._sent = True
+                return json.dumps({"data": True})
+
+        class FakeConnect:
+            def __init__(self, url):
+                pass
+
+            async def __aenter__(self):
+                return FakeWs()
+
+            async def __aexit__(self, *a):
+                return False
+
+        with patch("websockets.connect", FakeConnect):
+            ws = WsClient(LOCAL)
+            result = await ws.check_status("/api/testapp/index.json")
+            assert result is True
+
+    async def test_not_running(self):
+        class FakeWs:
+            async def send(self, data):
+                pass
+
+            def __aiter__(self):
+                return self
+
+            async def __anext__(self):
+                if getattr(self, "_sent", False):
+                    raise StopAsyncIteration
+                self._sent = True
+                return json.dumps({"data": False})
+
+        class FakeConnect:
+            def __init__(self, url):
+                pass
+
+            async def __aenter__(self):
+                return FakeWs()
+
+            async def __aexit__(self, *a):
+                return False
+
+        with patch("websockets.connect", FakeConnect):
+            ws = WsClient(LOCAL)
+            result = await ws.check_status("/api/testapp/index.json")
+            assert result is False
+
+
 #
 # ── Integration tests (live pinokiod) ───────────────────────────────
 #
@@ -222,3 +399,7 @@ class TestLiveClient:
     async def test_get_config(self, live_client):
         env = await live_client.get_config()
         assert isinstance(env, dict)
+
+    async def test_get_app_status_for_nonexistent(self, live_client):
+        status = await live_client.get_app_status("definitely-not-a-real-app-xyz")
+        assert status is None

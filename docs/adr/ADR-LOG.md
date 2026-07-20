@@ -39,6 +39,8 @@ outside the box," minimal-deps, uvx-first premise.
 
 ## ADR-004: `info`/`status` rationalization — see PLAN.md
 
+**Status: Implemented (2026-07-19).**
+
 Full ADR content lives in `PLAN.md`'s "`info` / `status` Rationalization
 (ADR-004)" section rather than duplicated here, since it's implementation-
 phase-heavy (13 tasks across 5 phases) and PLAN.md is the living roadmap

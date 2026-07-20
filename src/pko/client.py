@@ -3,12 +3,35 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, AsyncIterator, Callable, Optional
 
 import httpx
 
-from .models import PinokioInstance, SystemInfo, WsPacket
+from .models import AppInfo, PinokioInstance, SystemInfo, WsPacket
 from .config import CONFIG_DIR
+
+
+def _extract_js_module_fields(source: str) -> Optional[dict]:
+    """Best-effort extraction of literal string fields from a pinokio.js
+    CommonJS module (`module.exports = {...}`).
+
+    Most launcher projects ship pinokio.js as real JavaScript rather than
+    JSON (confirmed against a live instance — module.exports with a `menu`
+    function, not a plain object literal). We don't attempt a real JS
+    parse; this regexes out simple `key: "literal string"` pairs for the
+    handful of fields pko cares about (title, description, icon, version).
+    Computed/templated values (functions, template literals) are not
+    resolved and are simply absent from the result.
+    """
+    if not source or "module.exports" not in source:
+        return None
+    fields: dict[str, str] = {}
+    for key in ("title", "description", "icon", "version"):
+        m = re.search(rf'{key}\s*:\s*["\']([^"\']*)["\']', source)
+        if m:
+            fields[key] = m.group(1)
+    return fields or None
 
 
 class Client:
@@ -34,7 +57,7 @@ class Client:
             return False
 
     async def info(self) -> SystemInfo:
-        """GET /pinokio/info — system information."""
+        """GET /pinokio/info — system information (diagnostics only, no app data)."""
         r = await self._http.get("/pinokio/info")
         r.raise_for_status()
         data = r.json()
@@ -44,10 +67,21 @@ class Client:
             version=data.get("version", ""),
             memory=data.get("mem", {}),
             gpu=data.get("gpu", {}),
-            running_scripts=data.get("scripts", []),
             home=data.get("home", ""),
-            apps=data.get("api", []),
         )
+
+    async def list_running_scripts(self) -> list[dict]:
+        """GET /pinokio/info — extract only the running-scripts list.
+
+        Separated from info() so 'is X running' checks don't imply pulling
+        the whole system-diagnostics payload (GPU/memory) is the intended
+        contract — see ADR-004.
+        """
+        r = await self._http.get("/pinokio/info")
+        if r.status_code != 200:
+            return []
+        data = r.json()
+        return data.get("scripts", [])
 
     async def list_apps_from_info(self) -> list[dict]:
         """Get installed apps list from /pinokio/info (more reliable than fs endpoint)."""
@@ -80,7 +114,17 @@ class Client:
         return apps
 
     async def read_pinokio_js(self, app_name: str) -> Optional[dict]:
-        """Read pinokio.js metadata for an app."""
+        """Read pinokio.js/index.json metadata for an app.
+
+        pinokio.js is typically a real JavaScript module
+        (`module.exports = {...}`), not JSON — most launcher projects use
+        this form per proto/AGENTS.md's conventions, confirmed against a
+        live instance. Try JSON first (covers index.json and any
+        JSON-only pinokio.js), then fall back to a best-effort regex
+        extraction of simple string fields (title/description/icon) from
+        the raw JS source. This will not resolve computed/templated
+        values, but covers the common case of literal string fields.
+        """
         r = await self._http.get(
             "/pinokio/fs",
             params={"drive": "api", "path": f"{app_name}/pinokio.js"},
@@ -98,7 +142,7 @@ class Client:
         try:
             return r.json()
         except (json.JSONDecodeError, httpx.HTTPError):
-            return None
+            return _extract_js_module_fields(r.text)
 
     async def delete_app(self, app_name: str, delete_type: str = "bin") -> bool:
         """POST /pinokio/delete — delete an app."""
@@ -139,6 +183,61 @@ class Client:
         if r.status_code != 200:
             return None
         return r.text
+
+    async def get_app_status(self, app_name: str) -> Optional[dict]:
+        """GET /apps/status/:id — rich per-app status.
+
+        Discovered via the vendored pterm/util.js reference (ADR-005):
+        pterm's own `status` command uses this endpoint, not a WebSocket
+        probe. Confirmed live: returns running/ready state, title,
+        description, icon, ready_url, and running_scripts in one HTTP
+        call — strictly better than pko's prior WebSocket check_status()
+        approach (which mis-resolves the running script's URI for apps
+        whose default script isn't literally 'start.js', and needed a
+        separate call for app metadata). Superseded WsClient.check_status
+        as the canonical status path — see ADR-004 addendum.
+        """
+        r = await self._http.get(f"/apps/status/{app_name}")
+        if r.status_code != 200:
+            return None
+        try:
+            return r.json()
+        except (json.JSONDecodeError, httpx.HTTPError):
+            return None
+
+    async def get_app_metadata(self, app_name: str) -> Optional[AppInfo]:
+        """Rich metadata for an app: prefer /apps/status/:id (title,
+        description, icon, running state all in one call — see
+        get_app_status), fall back to reading pinokio.js/index.json
+        directly if the status endpoint is unavailable. Disk usage always
+        comes from a separate /du/:name call.
+
+        Backs `pko inspect <app>` (ADR-004).
+        """
+        du = await self.disk_usage(app_name)
+        status = await self.get_app_status(app_name)
+        if status is not None:
+            return AppInfo(
+                name=app_name,
+                path=status.get("path", app_name),
+                title=status.get("title", app_name),
+                description=status.get("description", ""),
+                icon=status.get("icon", ""),
+                running=bool(status.get("running", False)),
+                disk_usage=du or "",
+            )
+        script = await self.read_pinokio_js(app_name)
+        if script is None:
+            return None
+        return AppInfo(
+            name=app_name,
+            path=app_name,
+            title=script.get("title", app_name),
+            description=script.get("description", ""),
+            icon=script.get("icon", ""),
+            running=False,
+            disk_usage=du or "",
+        )
 
 
 class WsClient:

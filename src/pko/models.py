@@ -45,15 +45,16 @@ class AppInfo:
 
 @dataclass
 class SystemInfo:
-    """System information from pinokiod."""
+    """System information from pinokiod. System diagnostics only —
+    app-runtime data (running scripts, installed apps) lives elsewhere;
+    see Client.list_running_scripts() / Client.list_apps_from_info().
+    """
     platform: str = ""
     arch: str = ""
     version: str = ""
     memory: dict = field(default_factory=dict)
     gpu: dict = field(default_factory=dict)
-    running_scripts: list = field(default_factory=list)
     home: str = ""
-    apps: list = field(default_factory=list)
 
 
 @dataclass

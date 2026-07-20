@@ -267,7 +267,7 @@ def info(
     port: Optional[int] = typer.Option(None, "--port", "-p", help="Pinokio port"),
     json_output: bool = typer.Option(False, "--json", "-j", help="Output as JSON"),
 ):
-    """Show Pinokio system information."""
+    """Show Pinokio system information (diagnostics only — see 'pko status' for app runtime state)."""
     async def run():
         inst = _instance(host, port)
         console.print(f"── {_label(inst)} ──")
@@ -288,7 +288,6 @@ def info(
                     "memory": sys_info.memory,
                     "gpu": sys_info.gpu,
                     "home": sys_info.home,
-                    "running_scripts": len(sys_info.running_scripts),
                 }, indent=2))
                 return
 
@@ -296,8 +295,7 @@ def info(
                 f"[bold]Platform:[/bold] {sys_info.platform}\n"
                 f"[bold]Arch:[/bold] {sys_info.arch}\n"
                 f"[bold]Version:[/bold] {sys_info.version}\n"
-                f"[bold]Home:[/bold] {sys_info.home}\n"
-                f"[bold]Running:[/bold] {len(sys_info.running_scripts)} script(s)",
+                f"[bold]Home:[/bold] {sys_info.home}",
                 title=f"Pinokio @ {inst.base_url}",
             ))
 
@@ -338,16 +336,16 @@ def status(
                 _print_error(f"Cannot connect to {inst.base_url}")
                 raise typer.Exit(1)
 
-            # Fetch info to get running scripts
-            info = await client.info()
-            running_names = {s.get("app", "") for s in info.running_scripts if s.get("app")}
-
             show_all = all_apps or app_name is None
 
             if show_all:
+                # --all needs the full running-scripts list anyway, so the
+                # heavier /pinokio/info-backed call is the right tool here.
+                running_scripts = await client.list_running_scripts()
+                running_names = {s.get("app", "") for s in running_scripts if s.get("app")}
+
                 apps = await client.list_apps_from_info()
                 if not apps:
-                    # Fallback to fs-based listing
                     apps = await client.list_apps()
                 if not apps:
                     console.print("[yellow]No apps installed.[/yellow]")
@@ -365,7 +363,7 @@ def status(
                     status_str = "[green]running[/green]" if is_running else "[dim]stopped[/dim]"
                     url = ""
                     if is_running:
-                        for s in info.running_scripts:
+                        for s in running_scripts:
                             if s.get("app") == app_id:
                                 local = s.get("local", {})
                                 if isinstance(local, dict):
@@ -379,7 +377,7 @@ def status(
                     _print_error("Specify an app name or use --all")
                     raise typer.Exit(1)
 
-                # Check the app exists
+                # Check the app exists (one-time upfront lookup)
                 installed = await client.list_apps_from_info()
                 if not installed:
                     installed = await client.list_apps()
@@ -390,21 +388,68 @@ def status(
                     console.print(f"  Installed apps: {', '.join(sorted(installed_ids))}")
                     raise typer.Exit(1)
 
-                is_running = app_name in running_names
+                # Single-app check uses /apps/status/:id (HTTP, one call,
+                # returns running+ready+URL+metadata) rather than the
+                # WebSocket check_status() probe or the heavy
+                # /pinokio/info system-diagnostics call — see ADR-004 and
+                # ADR-005 (discovered via vendored pterm/util.js reference).
+                app_status = await client.get_app_status(app_name)
+                if app_status is None:
+                    _print_error(f"Could not get status for [bold]{app_name}[/bold]")
+                    raise typer.Exit(1)
+
+                is_running = bool(app_status.get("running", False))
                 if is_running:
-                    url = ""
-                    for s in info.running_scripts:
-                        if s.get("app") == app_name:
-                            local = s.get("local", {})
-                            if isinstance(local, dict):
-                                url = local.get("url", "")
-                            break
+                    ready_url = app_status.get("ready_url", "")
                     msg = f"[bold]{app_name}[/bold] is running"
-                    if url:
-                        msg += f" [dim]({url})[/dim]"
+                    if ready_url:
+                        msg += f" [dim]({ready_url})[/dim]"
                     _print_ok(msg)
                 else:
                     console.print(f"[yellow]⚠[/yellow] [bold]{app_name}[/bold] is not running")
+
+        finally:
+            await client.close()
+
+    asyncio.run(run())
+
+
+# ── Inspect ──────────────────────────────────────────────────────────
+
+@app.command()
+def inspect(
+    app_name: str = typer.Argument(..., help="App name to inspect"),
+    host: Optional[str] = typer.Option(None, "--host", help="Pinokio host"),
+    port: Optional[int] = typer.Option(None, "--port", "-p", help="Pinokio port"),
+):
+    """Show detailed metadata for an installed app (title, description, disk usage, running state)."""
+    async def run():
+        inst = _instance(host, port)
+        console.print(f"── {_label(inst)} ──")
+        client = Client(inst)
+        try:
+            ok = await client.health()
+            if not ok:
+                _print_error(f"Cannot connect to {inst.base_url}")
+                raise typer.Exit(1)
+
+            meta = await client.get_app_metadata(app_name)
+            if meta is None:
+                _print_error(f"App [bold]{app_name}[/bold] not found")
+                raise typer.Exit(1)
+
+            status_str = "[green]running[/green]" if meta.running else "[dim]stopped[/dim]"
+            body = (
+                f"[bold]Title:[/bold] {meta.title or meta.name}\n"
+                f"[bold]Status:[/bold] {status_str}\n"
+            )
+            if meta.description:
+                body += f"[bold]Description:[/bold] {meta.description}\n"
+            body += f"[bold]Path:[/bold] {meta.path}\n"
+            if meta.disk_usage:
+                body += f"[bold]Disk usage:[/bold] {meta.disk_usage}\n"
+
+            console.print(Panel(body.rstrip(), title=f"App: {app_name}"))
 
         finally:
             await client.close()

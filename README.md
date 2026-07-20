@@ -131,8 +131,14 @@ pko profile --default home     # Set default
 # List installed apps
 pko list
 
-# Check if an app is running
+# Check if an app is running (uses a lightweight WebSocket probe)
 pko status comfyui
+
+# Show all apps' running/stopped state at once
+pko status --all
+
+# Rich metadata for one app (title, description, disk usage, running state)
+pko inspect comfyui
 
 # Delete an app
 pko delete comfyui
@@ -144,7 +150,7 @@ pko restart
 ### System & Config
 
 ```bash
-# System information
+# System information (diagnostics only — platform, arch, version, GPU, memory)
 pko info
 pko info --json               # JSON output
 
@@ -199,6 +205,7 @@ pko wraps pinokiod's HTTP + WebSocket API into a clean CLI interface. It talks t
 |----------|--------|-------------|
 | `/check` | GET | Health check |
 | `/pinokio/info` | GET | System information |
+| `/apps/status/:id` | GET | Rich per-app status (running, ready_url, title, description) |
 | `/pinokio/port` | GET | Available port |
 | `/pinokio/fs` | GET | List/read files |
 | `/pinokio/delete` | POST | Delete app/cache |

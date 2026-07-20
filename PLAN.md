@@ -29,7 +29,7 @@
 | Start app | WebSocket `{uri: ..., mode: "run"}` | WS → `kernel.api.process()` |
 | Stop app | WebSocket `{method: "kernel.api.stop", params: {uri}}` | WS → `kernel.api.stop()` |
 | Delete app | `POST /pinokio/delete` | HTTP POST |
-| Check app status | WebSocket `{uri: ..., status: true}` | WS → `kernel.api.running` |
+| Check app status | `GET /apps/status/:id` (preferred; see ADR-004 addendum) or WebSocket `{uri: ..., status: true}` | HTTP GET / WS → `kernel.api.running` |
 | App info / metadata | Read `pinokio.js` from app dir | `GET /pinokio/fs?drive=api&path=app/index.json` |
 | List running apps | Read `kernel.api.running` | WS → status check |
 | Disk usage | `GET /du/:name` | HTTP GET |
@@ -321,6 +321,36 @@ Instead:
   for pure-remote (no filesystem access) cases.
 
 ## `info` / `status` Rationalization (ADR-004)
+
+**Status: Implemented (2026-07-19).** Phases A–D complete, D (dead-code cleanup) folded into the same pass since `check_status()` is now the canonical single-app path with no remaining dead code.
+
+**Addendum (same day, live testing against a real instance):** the
+implementation initially used `WsClient.check_status()` (the WebSocket
+probe) per the original Phase C plan below. Live testing surfaced two bugs
+this approach couldn't avoid: (1) it required guessing the app's script URI
+(`/api/<app>/start.js`), which is wrong for apps whose default launch
+script isn't literally named `start.js`; (2) `read_pinokio_js()` silently
+failed for the common case where `pinokio.js` is a real JS module
+(`module.exports = {...}`) rather than JSON, since most launcher projects
+use this form per `proto/AGENTS.md`'s convention.
+
+Cross-referencing the newly-vendored `pterm/util.js` (ADR-005) revealed
+pinokiod has an undocumented `GET /apps/status/:id` HTTP endpoint —
+confirmed live — that returns running/ready state, title, description,
+icon, `ready_url`, and `running_scripts` in one call, with none of the
+above guessing. `pterm`'s own `status` command uses this endpoint, not a
+WebSocket probe. **`status <app>` and `inspect <app>` were both rewired to
+use `Client.get_app_status()`/`get_app_metadata()` (HTTP) instead of
+`WsClient.check_status()` (WebSocket).** `check_status()` remains in
+`client.py` (still covered by unit tests) as a general capability, but is
+no longer on the CLI's hot path — it may still be useful for pinokiod
+resources not covered by `/apps/status/:id` (raw pinokio.js URIs without
+an app_id), but that's speculative until a concrete need arises.
+
+`read_pinokio_js()` also gained a best-effort regex fallback
+(`_extract_js_module_fields()`) for non-JSON `pinokio.js` files, used only
+when `/apps/status/:id` is unavailable — kept as a fallback path since it's
+still useful if a future pinokiod lacks that endpoint.
 
 ### Problem: Confusing Overlap
 
