@@ -174,8 +174,8 @@ class TestClientConfig:
 # ── Integration tests (live pinokiod) ───────────────────────────────
 #
 # Target instance set via PKO_TEST_HOST / PKO_TEST_PORT env vars.
-# Defaults to localhost:42000. Skip if unreachable.
-# Useful for remote testing: PKO_TEST_HOST=mando PKO_TEST_PORT=42000
+# Defaults to localhost:42000. Skip if unreachable — set env vars to point
+# at any reachable pinokiod instance for remote testing.
 #
 
 
@@ -206,7 +206,7 @@ class TestLiveClient:
 
     async def test_info(self, live_client):
         info = await live_client.info()
-        assert info.platform == "linux"
+        assert info.platform in ("linux", "win32", "darwin")
         assert isinstance(info.version, dict)
         assert isinstance(info.home, str)
 

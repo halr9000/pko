@@ -11,6 +11,42 @@
       "source_repo": "pinokiocomputer/proto",
       "source_path": "AGENTS.md",
       "dest": "vendor/proto/AGENTS.md"
+    },
+    "pterm-readme": {
+      "sha": "58bbf6e1404c1140eb21575eade7be543a329038",
+      "source_repo": "pinokiocomputer/pterm",
+      "source_path": "README.md",
+      "dest": "vendor/pterm/README.md"
+    },
+    "pterm-endpoint": {
+      "sha": "7f12c4e0279d7280b1ec6165e1e3deada5b1de85",
+      "source_repo": "pinokiocomputer/pterm",
+      "source_path": "endpoint.js",
+      "dest": "vendor/pterm/endpoint.js"
+    },
+    "pterm-target": {
+      "sha": "7f12c4e0279d7280b1ec6165e1e3deada5b1de85",
+      "source_repo": "pinokiocomputer/pterm",
+      "source_path": "target.js",
+      "dest": "vendor/pterm/target.js"
+    },
+    "pterm-script": {
+      "sha": "7f12c4e0279d7280b1ec6165e1e3deada5b1de85",
+      "source_repo": "pinokiocomputer/pterm",
+      "source_path": "script.js",
+      "dest": "vendor/pterm/script.js"
+    },
+    "pterm-rpc": {
+      "sha": "7f12c4e0279d7280b1ec6165e1e3deada5b1de85",
+      "source_repo": "pinokiocomputer/pterm",
+      "source_path": "rpc.js",
+      "dest": "vendor/pterm/rpc.js"
+    },
+    "pterm-util": {
+      "sha": "58bbf6e1404c1140eb21575eade7be543a329038",
+      "source_repo": "pinokiocomputer/pterm",
+      "source_path": "util.js",
+      "dest": "vendor/pterm/util.js"
     }
   }
 }

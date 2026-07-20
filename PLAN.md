@@ -177,7 +177,7 @@ uv run pytest tests/ -v -m "not integration"
 uv run pytest tests/ -v -m "integration"
 
 # Remote instance
-PKO_TEST_HOST=mando PKO_TEST_PORT=42000 uv run pytest tests/ -v -m "integration"
+PKO_TEST_HOST=<your-host> PKO_TEST_PORT=42000 uv run pytest tests/ -v -m "integration"
 ```
 
 Tests marked `@pytest.mark.integration` auto-skip if the target is unreachable.
@@ -516,7 +516,7 @@ Output: app name, title, description, path, disk usage, whether it's currently r
 
 ## `pterm` Discovery — Strategic Options (ADR-005)
 
-**Status: options laid out for user decision. Not yet decided.**
+**Status: Decided — Option 1 accepted (2026-07-19).**
 
 ### Context
 

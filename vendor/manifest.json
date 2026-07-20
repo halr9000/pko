@@ -16,6 +16,54 @@
       "ref": "main",
       "dest": "vendor/proto/AGENTS.md",
       "purpose": "Canonical app-authoring guide stamped into every new Pinokio launcher project (also rendered to CLAUDE.md, .cursorrules, etc. by proto's agents.js module). Covers PINOKIO_HOME destination resolution, app-launcher vs plugin-launcher structure, script API reference, and best practices. This is the design source for pko's create-app command and informs pko's install command's destination-resolution logic."
+    },
+    {
+      "id": "pterm-readme",
+      "source_repo": "pinokiocomputer/pterm",
+      "source_path": "README.md",
+      "ref": "main",
+      "dest": "vendor/pterm/README.md",
+      "purpose": "Stable public CLI command reference for pterm, the Pinokio author's own Node.js CLI. ADR-005 (Option 1): pko does not depend on pterm at runtime, but treats its source as an authoritative protocol reference to de-risk Phase 2-4 implementation (community registry search, install/download, start/stop, status, logs) since pterm already talks to the same pinokiod HTTP/WS API pko wraps in pure Python."
+    },
+    {
+      "id": "pterm-endpoint",
+      "source_repo": "pinokiocomputer/pterm",
+      "source_path": "endpoint.js",
+      "ref": "main",
+      "dest": "vendor/pterm/endpoint.js",
+      "purpose": "Target/base-URL resolution logic (resolveHttpBaseUrl, resolveWsBaseUrl, ~/.pinokio/config.json access field, DEFAULT_BASE_URL fallback chain). Reference for pko's own connect/profile/discover target resolution to stay consistent with upstream conventions."
+    },
+    {
+      "id": "pterm-target",
+      "source_repo": "pinokiocomputer/pterm",
+      "source_path": "target.js",
+      "ref": "main",
+      "dest": "vendor/pterm/target.js",
+      "purpose": "Parses pinokio:// URIs, local file paths, and qualified app IDs (appId@host) into control targets. Reference for how pko should parse/resolve app references consistently with the ecosystem convention, particularly for any future pinokio:// ref support in pko."
+    },
+    {
+      "id": "pterm-script",
+      "source_repo": "pinokiocomputer/pterm",
+      "source_path": "script.js",
+      "ref": "main",
+      "dest": "vendor/pterm/script.js",
+      "purpose": "Script.start/stop implementation — the authoritative reference for pinokiod's WebSocket RPC message shapes used by pko's still-unimplemented start/stop/install commands (PLAN.md Phase 4). Removes guesswork pko previously had to do by reading only pinokiod's server-side source."
+    },
+    {
+      "id": "pterm-rpc",
+      "source_repo": "pinokiocomputer/pterm",
+      "source_path": "rpc.js",
+      "ref": "main",
+      "dest": "vendor/pterm/rpc.js",
+      "purpose": "WebSocket RPC transport layer (kernel.* method call framing). Reference for pko's own WebSocket client implementation in Phase 4."
+    },
+    {
+      "id": "pterm-util",
+      "source_repo": "pinokiocomputer/pterm",
+      "source_path": "util.js",
+      "ref": "main",
+      "dest": "vendor/pterm/util.js",
+      "purpose": "HTTP-based utility command implementations (status, logs, search, registry search, star/unstar, which, home) — reference for the exact HTTP endpoints/payloads pko's own client.py should call for Phase 2-3 features not yet implemented."
     }
   ]
 }
