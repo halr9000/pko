@@ -513,3 +513,193 @@ Output: app name, title, description, path, disk usage, whether it's currently r
 - **`pko info --watch`**: A live-updating system dashboard (like `top` for Pinokio) — could show system info + running scripts count in a split view, but that's a separate feature.
 - **`pko inspect --json`**: Natural extension once `inspect` exists.
 - **Backward compatibility shim**: If needed, a `pko info --legacy` flag could restore the old combined output. Not recommended — pre-1.0 breaking changes are acceptable.
+
+## `pterm` Discovery — Strategic Options (ADR-005)
+
+**Status: options laid out for user decision. Not yet decided.**
+
+### Context
+
+The Pinokio author flagged `pterm` (https://github.com/pinokiocomputer/pterm) as
+a project pko should be aware of. Research (deepwiki + direct README read) shows
+`pterm` is **far more capable than the vendored `SKILL_PINOKIO.md` implied** —
+that skill teaches an agent to shell out to `pterm`, so `pterm` was always the
+real runtime-control surface underneath the skill, not just documentation of
+one. This changes the shape of the split-brain question first raised in
+ADR-003.
+
+### What `pterm` actually is (confirmed via source + docs)
+
+- **Node.js CLI**, `npm install -g pterm`. No Python bindings. To use it from
+  Python you'd shell out to a subprocess — there is no library-level
+  integration path.
+- **Commands**: `download` (install), `start`, `stop`, `status`, `logs`,
+  `search` (installed/local apps), `registry search` (**community search** —
+  `api.pinokio.co/v1/search`, with `--platform`/`--gpu` filters), `star`/
+  `unstar`, `which`, `home`, `open`, `filepicker`, `clipboard`, `push`
+  (desktop notification), `version`.
+- **Headless-safe subset** (confirmed no local GUI/desktop dependency):
+  `status`, `logs`, `search`, `registry search`, `download`, `start`, `stop`,
+  `which`, `home`, `version` — these talk to `pinokiod` over HTTP/WS only.
+- **GUI-bound subset** (requires a local Pinokio desktop process on the same
+  machine as `pterm`): `filepicker`, `open`, `clipboard`, `push`. Not
+  relevant to pko's headless-automation use case either way.
+- **Target resolution**: defaults to `127.0.0.1:42000`, falls back to
+  `~/.pinokio/config.json`'s stored `access` URL. Remote targeting exists
+  per-command via `pinokio://host:port/scope/id` refs or `appId@host`
+  qualified IDs — **not** a persistent "set my default remote" profile
+  system like pko's `connect`/`profile` commands. For `status`/`logs`
+  specifically, a `pinokio://` ref resolves and talks directly to the named
+  remote `pinokiod`'s HTTP API — it does not require a *local* `pinokiod` to
+  relay that specific call. (Other commands like `open`/`start --peer` do
+  route through a local control plane by design, since they're either
+  GUI-bound or need the invoking node's own identity as the relay origin.)
+- **JSON output**: most commands print JSON directly or behind `--json`;
+  the tool is positioned for agent use, though no documented API stability
+  guarantee.
+- **Auth**: `pinokiod`'s HTTP API has no visible auth/token mechanism —
+  network-level trust only. Same finding applies to pko's own client, so
+  this isn't a `pterm`-specific gap, just a shared open question (already
+  implicitly assumed by pko's design — worth a note in a future ADR on
+  transport security if pko is ever used over untrusted networks; Tailscale
+  or an SSH tunnel is the de facto answer today).
+
+### Why this doesn't simply replace pko's premise
+
+`pterm`'s headless-safe commands *can* target a remote `pinokiod` over the
+network without a local Pinokio installation. But **`pterm` still requires
+Node.js + `npm install -g pterm` on the machine the agent itself runs on** —
+it does not remove the Node dependency, it only removes the requirement that
+Node be co-located with the *target* `pinokiod`. An agent environment that is
+pure Python (no Node runtime available, or one deliberately kept minimal —
+e.g. a locked-down sandbox, a `uvx`-only CI step, a phone-side agent runtime)
+still cannot use `pterm` at all. This is pko's actual differentiator, and it
+survives `pterm`'s existence unchanged.
+
+What `pterm`'s existence *does* invalidate: the assumption from pko's
+original vision (see `AGENTS.md`) that pko needed to build community
+search/publish, install-from-registry, and WebSocket script execution
+*itself*, from scratch, guessing at pinokiod's protocol. `pterm` is the
+Pinokio author's own reference implementation of exactly that surface,
+already covering the registry search, star/unstar, download, start/stop,
+status, and logs — the entirety of pko's planned Phase 2–4 roadmap.
+Reimplementing all of that independently, without `pterm`'s source as a
+guide, is now a strictly worse plan than it was before this research: pko
+would be guessing at protocol details (WebSocket RPC shapes, `pinokio://`
+ref parsing, qualified-ID syntax) that `pterm`'s source already answers
+authoritatively.
+
+### Options
+
+**Option 1 — Independent Python implementation, `pterm`-informed (status quo, revised)**
+
+Keep pko as a pure-Python, zero-Node client (current architecture). Use
+`pterm`'s source as a **third vendored reference** (alongside
+`SKILL_PINOKIO.md` and `proto/AGENTS.md`) to close protocol gaps pko has
+been reverse-engineering from `pinokiod`'s server source alone — especially
+the WebSocket RPC shapes for `start`/`stop`/`download` (Phase 4, currently
+unimplemented) and the community registry API (Phase 3, currently
+unimplemented). Do not vendor `pterm`'s full source, just study it as a
+protocol reference the same way `proto/AGENTS.md` is studied for the
+create-app design (ADR-003).
+
+- *Pros*: Preserves pko's actual differentiator (zero-Node, works in
+  pure-Python/`uvx`-only environments). No new runtime dependency. Fastest
+  path — no architecture change, just fills gaps in Phases 2–4 with much
+  higher confidence since the protocol is now documented via a working
+  reference implementation instead of guesswork.
+- *Cons*: Two independent implementations of the same protocol now exist
+  in the world (`pterm`'s and pko's) — real ongoing maintenance burden if
+  pinokiod's protocol changes, since pko has no automatic way to detect
+  drift the way `sync_vendor.py --check` does for the two markdown files.
+  pko's start/stop/install remain stubs until Phases 2-4 are implemented —
+  this doesn't accelerate that work, it just makes it more accurate.
+
+**Option 2 — pko becomes a thin Python wrapper that shells out to `pterm`**
+
+pko's Python CLI becomes a UX/ergonomics layer (profiles, discovery,
+cross-instance orchestration, `uvx` packaging) on top of `pterm` as a
+subprocess dependency for actual app-lifecycle operations.
+
+- *Pros*: Zero protocol-drift risk — `pterm` IS the reference
+  implementation, maintained by the Pinokio author. Massive scope
+  reduction: Phases 2–4 (community, install, start/stop) become "call
+  `pterm registry search`, parse JSON" instead of building a WebSocket
+  client from scratch.
+- *Cons*: **Breaks pko's core value proposition.** `uvx pko` would silently
+  require Node.js + a global npm install of `pterm` to actually do
+  anything beyond read-only `info`/`config`/`delete` (the pinokiod HTTP
+  endpoints pko already covers directly, not via `pterm`). "Minimal deps"
+  and "cross-platform, zero-Node" become false claims. Every environment
+  running pko now needs two runtimes (Python + Node) instead of one. This
+  directly contradicts the ADR-003 framing the user set: "my own agents run
+  outside of Pinokio" — many of those agent runtimes (this Hermes session
+  included) are not guaranteed to have Node.js available or wish to install
+  it just for pko.
+
+**Option 3 — Hybrid: pko keeps its own HTTP/WS client, but optionally shells out to `pterm` when present**
+
+pko detects `pterm` on `PATH` at runtime. If present, pko can delegate
+specific operations to it (e.g. `registry search`, which involves an
+external API `pterm` already implements correctly) while keeping its own
+direct HTTP/WS implementation as the fallback and default for
+Node-less environments.
+
+- *Pros*: Best of both — no hard Node dependency (pko still works standalone
+  via `uvx`), but gets a "free" correctness boost for operations where
+  `pterm` is available and already-correct.
+- *Cons*: Two code paths per feature (with/without `pterm`) is real
+  complexity — more surface area for bugs, more to test, more to document
+  ("works differently depending on what's on PATH" is a support burden).
+  Given ADR-003's "easy to maintain" requirement, this is the option most
+  in tension with that goal.
+
+**Option 4 — Scope pko down to explicitly what `pterm` cannot do**
+
+Formally narrow pko's scope to: connection-profile management, multi/remote
+instance discovery (`discover`), and *cross-instance* orchestration
+(operations spanning N named profiles that no single `pterm` invocation
+expresses) — explicitly deferring all single-instance app lifecycle
+(install/start/stop/status/logs/search/registry) to `pterm` in
+documentation, i.e. "if you have Node, just use `pterm`; pko is for
+Python-only agents and multi-instance fleets." Phases 2-4 of the current
+roadmap would be dropped, not implemented.
+
+- *Pros*: Smallest, most maintainable pko. Avoids ALL protocol-drift risk
+  for app-lifecycle operations since pko simply doesn't implement them.
+  Honest about what pko is for.
+- *Cons*: Guts the "app CRUD" ambition the user has repeatedly said they
+  want before calling this near-1.0 (see prior session: "Really needs app
+  CRUD before I will call it close to 1.0"). Directly conflicts with that
+  stated goal — a pure-Python agent that needs to `install`/`start` an app
+  and has no Node available would simply be unable to do so through pko
+  under this option.
+
+### Recommendation (non-binding — user decision needed)
+
+**Option 1** best serves the goals already on record for this project: the
+"agent runs outside the box" premise from ADR-003, minimal deps, uvx-first,
+"my own agents run outside of Pinokio" — all explicitly stated by the user
+and all undercut by Options 2/3's Node dependency. `pterm`'s existence is
+valuable primarily as a **protocol reference that de-risks Phases 2–4**,
+not as a dependency to take on. Recommend vendoring `pterm`'s source
+(or at minimum its `README.md` + `endpoint.js`/`target.js`/`script.js`) as a
+fourth entry in `vendor/manifest.json` alongside the existing two files, and
+using it to write the WebSocket RPC client for Phase 4 with confidence
+instead of guessing from `pinokiod` server source alone.
+
+### Open questions for the user
+
+1. Does the recommendation above (Option 1) match your intent, or did
+   "may have us scrap parts of the plan" mean you're leaning toward Option 4
+   (narrower scope) instead?
+2. Should `pterm`'s source be vendored in full (whole repo files relevant to
+   protocol, e.g. `endpoint.js`, `target.js`, `script.js`, `rpc.js`) or just
+   `README.md` (command reference only, no implementation detail)? Full
+   source gives more protocol certainty but is more to keep in sync.
+3. Is there a *supported* npx/uvx interop pattern the Pinokio author
+   intends (e.g. does he expect Python agents to shell out to `npx pterm`
+   as the sanctioned integration path, making Option 2/3 more legitimate
+   than this ADR assumes)? Worth asking directly, since this changes the
+   analysis meaningfully — his message about pterm may itself be a hint
+   toward one of these options.

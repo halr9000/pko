@@ -8,6 +8,30 @@ list and how to re-query them via deepwiki.
 
 ---
 
+## ADR-005: `pterm` discovery — strategic options (2026-07-19)
+
+Full content lives in `PLAN.md`'s "`pterm` Discovery — Strategic Options
+(ADR-005)" section, since it's an options-menu for the user rather than a
+settled decision. Summary: the Pinokio author pointed us at `pterm`
+(https://github.com/pinokiocomputer/pterm), his own Node.js CLI for
+Pinokio — and it turns out to be the actual implementation underneath
+`SKILL_PINOKIO.md` (the vendored skill teaches an agent to shell out to it).
+It covers nearly all of pko's planned Phase 2–4 roadmap (registry search,
+install, start/stop, status, logs) with a working, authoritative protocol
+reference. Four options laid out (independent Python impl informed by
+`pterm`'s source; thin wrapper shelling out to `pterm`; hybrid
+detect-and-delegate; scope pko down to only what `pterm` can't do), with a
+non-binding recommendation for Option 1 (keep pko pure-Python/zero-Node,
+use `pterm`'s source as a protocol reference rather than a runtime
+dependency) — since Options 2/3 would add a Node.js dependency that
+contradicts pko's stated "agent runs outside the box," minimal-deps,
+uvx-first premise. Decision pending user input; three open questions
+posed in PLAN.md.
+
+---
+
+
+
 ## ADR-004: `info`/`status` rationalization — see PLAN.md
 
 Full ADR content lives in `PLAN.md`'s "`info` / `status` Rationalization
