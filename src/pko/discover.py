@@ -28,7 +28,6 @@ async def probe_instance(host: str, port: int, timeout: float = 2.0) -> Optional
                 return PinokioInstance(
                     host=host,
                     port=port,
-                    name=f"{host}:{port}",
                     source="discover",
                     is_local=host in ("localhost", "127.0.0.1", "::1", socket.gethostname()),
                 )
@@ -66,7 +65,6 @@ def resolve_instance(
         return PinokioInstance(
             host=host,
             port=port or DEFAULT_PORT,
-            name=f"{host}:{port or DEFAULT_PORT}",
             source="cli",
             is_local=host in ("localhost", "127.0.0.1", "::1"),
         )

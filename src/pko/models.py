@@ -8,11 +8,10 @@ from typing import Optional
 
 @dataclass
 class PinokioInstance:
-    """A discovered or configured Pinokio instance."""
+    """A discovered or configured Pinokio instance, identified by host:port."""
     host: str
     port: int
-    name: str = ""
-    source: str = "manual"  # "manual", "discover", "env"
+    source: str = "manual"  # "manual", "discover", "env", "config", "cli", "default"
     is_local: bool = False
 
     @property
@@ -25,9 +24,6 @@ class PinokioInstance:
 
     @property
     def display_label(self) -> str:
-        """Show the profile name if set and not 'default', otherwise host:port."""
-        if self.name and self.name != "default":
-            return self.name
         return f"{self.host}:{self.port}"
 
 

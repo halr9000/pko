@@ -20,6 +20,10 @@ class TestPinokioInstance:
         inst = PinokioInstance(host="localhost", port=42000)
         assert inst.source == "manual"
 
+    def test_display_label_is_host_port(self):
+        inst = PinokioInstance(host="mando", port=42000)
+        assert inst.display_label == "mando:42000"
+
 
 class TestSystemInfo:
     def test_defaults(self):

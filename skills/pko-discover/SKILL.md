@@ -1,14 +1,14 @@
 ---
 name: pko-discover
-description: Discover Pinokio instances on localhost, remote hosts, or save connection profiles for later use. Use when the task is "find Pinokio", "connect to Pinokio", "scan for instances", or "save a profile".
+description: Discover Pinokio instances on localhost, remote hosts, or save known host:port targets for later use. Use when the task is "find Pinokio", "connect to Pinokio", "scan for instances", or "save a host".
 metadata:
   author: pko
-  version: "0.1.0"
+  version: "0.2.0"
 ---
 
 # pko-discover: Discover Pinokio Instances
 
-Find local or remote Pinokio instances by scanning well-known ports, or save a connection profile for repeated use.
+Find local or remote Pinokio instances by scanning well-known ports, or save a host:port for repeated use.
 
 ## How It Works
 
@@ -23,26 +23,31 @@ uvx pko discover
 # Scan a remote host
 uvx pko discover --host 192.168.1.50
 
-# Save a discovered instance as a profile
-uvx pko connect my-server 192.168.1.50:42000
+# Scan and save the first found instance as default in one step
+uvx pko discover --host 192.168.1.50 --save
 
-# List saved profiles
-uvx pko profile
+# Save a known instance as default
+uvx pko connect 192.168.1.50:42000
 
-# View a specific profile
-uvx pko profile my-server
+# List saved hosts
+uvx pko hosts
 ```
 
-## Profiles
+## Known Hosts
 
-Connection profiles are stored in `~/.config/pko/config.json`. Each profile stores:
+Known hosts are stored in `~/.config/pko/config.json`, referenced purely by
+`host:port` — there is no separate profile-name concept. Each entry stores:
 - `host` — the instance hostname/IP
 - `port` — the port number
-- `name` — a human-friendly label
 
-Set a profile as default:
+Set a saved host as default:
 ```bash
-uvx pko profile --default my-server
+uvx pko hosts --default 192.168.1.50:42000
+```
+
+Forget a saved host:
+```bash
+uvx pko hosts --forget 192.168.1.50:42000
 ```
 
 ## Environment Variables
@@ -58,7 +63,7 @@ If no instances found:
 1. Verify Pinokio (pinokiod) is running on the target machine
 2. Try `pko discover --host <explicit-ip>` 
 3. Check firewall rules for port 42000
-4. Connect manually: `pko connect <name> <host>:<port>`
+4. Connect manually: `pko connect <host>:<port>`
 
 ## Installation
 

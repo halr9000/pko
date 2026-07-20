@@ -19,7 +19,7 @@ npx skills add path/to/pko --skill pko-start
 npx skills add owner/pko
 
 # Connect to an instance
-uvx pko connect my-server 192.168.1.50:42000
+uvx pko connect 192.168.1.50:42000
 
 # List installed apps
 uvx pko list
@@ -36,18 +36,18 @@ uvx pko inspect comfyui
 
 ## API Design
 
-pko wraps the pinokiod HTTP + WebSocket API into a clean CLI. All commands accept `--host` and `--port` for targeting remote instances, or use saved profiles.
+pko wraps the pinokiod HTTP + WebSocket API into a clean CLI. All commands accept `--host` and `--port` for targeting remote instances, or use the saved default host.
 
 ### Command Groups
 
 | Command | Description | Phase |
 |---------|-------------|-------|
 | `discover` | Find Pinokio instances on localhost or remote host | 1 |
-| `connect` | Save a connection profile | 1 |
-| `profile` | Manage connection profiles | 1 |
+| `connect` | Save a known host:port and set it as default | 1 |
+| `hosts` | List known Pinokio servers (host:port) | 1 |
 | `list` | List installed apps | 1 |
 | `info` | System information (diagnostics only) | 1 |
-| `status` | Check if an app is running (WebSocket probe for single app; `--all` lists everyone) | 1 |
+| `status` | Check if an app is running (`GET /apps/status/:id` for single app; `--all` lists everyone) | 1 |
 | `inspect` | Rich per-app metadata: title, description, disk usage, running state | 1 |
 | `config` | Get/set environment configuration | 2 |
 | `logs` | View server logs | 2 |
@@ -138,7 +138,7 @@ Messages are JSON with `{type, id, data, index}`:
 ### For agents managing Pinokio
 
 1. **Discover first**: Always run `pko discover` to find instances before connecting
-2. **Save profiles**: Use `pko connect <name> <host>:<port>` for repeatable connections
+2. **Save known hosts**: Use `pko connect <host>:<port>` for repeatable connections
 3. **Check health before operations**: `pko info` to verify the instance is responsive
 4. **App lifecycle**: `pko list` → `pko status <app>` → `pko start <app>` or `pko stop <app>`
 5. **Config changes**: Use `pko config` to read values; for writes, edit the ENVIRONMENT file
@@ -146,7 +146,7 @@ Messages are JSON with `{type, id, data, index}`:
 ### For human users
 
 - `uvx pko discover` — find instances
-- `uvx pko connect home localhost:42000` — save connection
+- `uvx pko connect localhost:42000` — save default host
 - `uvx pko info` — check system
 - `uvx pko list` — see installed apps
 - `uvx pko config` — see environment variables

@@ -8,6 +8,15 @@ list and how to re-query them via deepwiki.
 
 ---
 
+## ADR-006: Drop named profiles, use host:port only (2026-07-19)
+
+**What:** Removed the profile-name concept from `config.py`/`connect`/`profile` entirely. Servers are now referred to purely by `host:port`; config stores a flat list of known hosts + one default. `connect` takes a single `host:port` argument; `profile` is replaced by `hosts` (list/`--default`/`--forget`).
+
+**Why:** User doesn't expect to need named profiles — host:port is sufficient and removes a layer of indirection. Also fixed a real bug this surfaced: `get_profile()` always read the `"default"` profile regardless of what `set_default_profile()` had set, so `pko connect` silently had no effect on subsequent commands.
+
+---
+
+
 ## ADR-005: `pterm` discovery — strategic options (2026-07-19, decided same day)
 
 **Decision: Option 1 accepted.** pko stays pure-Python/zero-Node; `pterm`'s

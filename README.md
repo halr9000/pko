@@ -36,7 +36,7 @@ uvx pko status comfyui     # Check if an app is running
 uvx pko discover
 
 # Connect to a remote instance
-uvx pko connect my-server 192.168.1.50:42000
+uvx pko connect 192.168.1.50:42000
 
 # List installed apps
 uvx pko list
@@ -114,15 +114,14 @@ pko discover
 # Scan a remote host
 pko discover --host 192.168.1.50
 
-# Connect and save a profile
-pko connect home localhost:42000
-pko connect server 10.0.0.5:42000
+# Connect and save as default host
+pko connect localhost:42000
+pko connect 10.0.0.5:42000
 
-# Manage profiles
-pko profile                    # List all
-pko profile home               # Show details
-pko profile --delete server    # Remove
-pko profile --default home     # Set default
+# Manage known hosts
+pko hosts                        # List all
+pko hosts --default 10.0.0.5:42000  # Set default
+pko hosts --forget 10.0.0.5:42000   # Remove
 ```
 
 ### App Lifecycle
@@ -301,7 +300,7 @@ pko/
 
 ### Phase 1 — Core ✅ Done
 - ✅ Instance discovery (localhost + remote)
-- ✅ Connection profiles
+- ✅ Known-hosts config (host:port, no profile names)
 - ✅ List installed apps
 - ✅ System info
 - ✅ App status check

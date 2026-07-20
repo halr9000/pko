@@ -68,7 +68,7 @@ pko/
 │   ├── main.py              # Typer CLI app
 │   ├── client.py            # HTTP + WebSocket client to pinokiod
 │   ├── discover.py          # Instance discovery (local + remote)
-│   ├── config.py            # pko config (profiles, connections)
+│   ├── config.py            # pko config (known hosts, default target)
 │   ├── models.py            # Data models / types
 │   ├── app.py               # App lifecycle operations
 │   ├── system.py            # System/config operations
@@ -578,7 +578,7 @@ ADR-003.
   `~/.pinokio/config.json`'s stored `access` URL. Remote targeting exists
   per-command via `pinokio://host:port/scope/id` refs or `appId@host`
   qualified IDs — **not** a persistent "set my default remote" profile
-  system like pko's `connect`/`profile` commands. For `status`/`logs`
+  system like pko's `connect`/`hosts` commands. For `status`/`logs`
   specifically, a `pinokio://` ref resolves and talks directly to the named
   remote `pinokiod`'s HTTP API — it does not require a *local* `pinokiod` to
   relay that specific call. (Other commands like `open`/`start --peer` do
