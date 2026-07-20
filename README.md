@@ -116,12 +116,13 @@ pko discover --host 192.168.1.50
 
 # Connect and save as default host
 pko connect localhost:42000
-pko connect 10.0.0.5:42000
+pko connect 10.0.0.5:42000 --name secondary
 
-# Manage known hosts
-pko hosts                        # List all
-pko hosts --default 10.0.0.5:42000  # Set default
-pko hosts --forget 10.0.0.5:42000   # Remove
+# Manage profiles (rarely needed — connect already sets the default)
+pko profile                    # List all
+pko profile secondary          # Show details
+pko profile secondary --delete # Remove
+pko profile secondary --default # Set as default
 ```
 
 ### App Lifecycle
@@ -300,7 +301,7 @@ pko/
 
 ### Phase 1 — Core ✅ Done
 - ✅ Instance discovery (localhost + remote)
-- ✅ Known-hosts config (host:port, no profile names)
+- ✅ Connection profiles (optional name, defaults to "default")
 - ✅ List installed apps
 - ✅ System info
 - ✅ App status check

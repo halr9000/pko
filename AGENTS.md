@@ -43,8 +43,8 @@ pko wraps the pinokiod HTTP + WebSocket API into a clean CLI. All commands accep
 | Command | Description | Phase |
 |---------|-------------|-------|
 | `discover` | Find Pinokio instances on localhost or remote host | 1 |
-| `connect` | Save a known host:port and set it as default | 1 |
-| `hosts` | List known Pinokio servers (host:port) | 1 |
+| `connect` | Save a connection profile (name optional, defaults to "default") | 1 |
+| `profile` | Manage connection profiles | 1 |
 | `list` | List installed apps | 1 |
 | `info` | System information (diagnostics only) | 1 |
 | `status` | Check if an app is running (`GET /apps/status/:id` for single app; `--all` lists everyone) | 1 |
@@ -138,7 +138,7 @@ Messages are JSON with `{type, id, data, index}`:
 ### For agents managing Pinokio
 
 1. **Discover first**: Always run `pko discover` to find instances before connecting
-2. **Save known hosts**: Use `pko connect <host>:<port>` for repeatable connections
+2. **Save known hosts**: Use `pko connect <host>:<port>` for repeatable connections (name is optional)
 3. **Check health before operations**: `pko info` to verify the instance is responsive
 4. **App lifecycle**: `pko list` → `pko status <app>` → `pko start <app>` or `pko stop <app>`
 5. **Config changes**: Use `pko config` to read values; for writes, edit the ENVIRONMENT file

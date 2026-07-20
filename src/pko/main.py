@@ -23,10 +23,11 @@ from .client import Client, WsClient
 from .discover import discover_local, discover_remote, probe_instance, resolve_instance
 from .config import (
     get_default_instance,
-    add_host,
-    set_default_host,
-    forget_host,
-    list_hosts,
+    add_profile,
+    get_profile,
+    set_default_profile,
+    remove_profile,
+    list_profiles,
     load_config,
     save_config,
 )
@@ -145,14 +146,16 @@ def config(
 @app.command()
 def connect(
     address: str = typer.Argument(..., help="Host:port (e.g., '192.168.1.50:42000')"),
+    name: str = typer.Option("default", "--name", help="Profile name (rarely needed — most users can ignore this)"),
 ):
     """Save a known Pinokio server and set it as the default."""
     parts = address.split(":")
     host = parts[0]
     port = int(parts[1]) if len(parts) > 1 else DEFAULT_PORT
 
-    add_host(host, port, set_default=True)
-    _print_ok(f"Saved [bold]{host}:{port}[/bold] [dim](now default)[/dim]")
+    add_profile(host, port, name=name, set_default=True)
+    label = f"{host}:{port}" if name == "default" else f"{name} ({host}:{port})"
+    _print_ok(f"Saved [bold]{label}[/bold] [dim](now default)[/dim]")
 
 
 # ── Delete ───────────────────────────────────────────────────────────
@@ -235,54 +238,13 @@ def discover(
 
         if save:
             first = instances[0]
-            add_host(first.host, first.port, set_default=True)
+            add_profile(first.host, first.port, set_default=True)
             _print_ok(f"Saved [bold]{first.host}:{first.port}[/bold] [dim](now default)[/dim]")
         else:
             console.print("\n[dim]Save a host for quick access:[/dim]")
             console.print("  [bold]pko connect <host>:<port>[/bold]  (or re-run with --save)")
 
     asyncio.run(run())
-
-
-# ── Hosts ────────────────────────────────────────────────────────────
-
-@app.command()
-def hosts(
-    forget: Optional[str] = typer.Option(None, "--forget", help="Forget a saved host:port"),
-    default: Optional[str] = typer.Option(None, "--default", help="Set a saved host:port as default"),
-):
-    """List known Pinokio servers (host:port)."""
-    if forget:
-        host, _, port_str = forget.partition(":")
-        port = int(port_str) if port_str else DEFAULT_PORT
-        if forget_host(host, port):
-            _print_ok(f"Forgot [bold]{host}:{port}[/bold]")
-        else:
-            _print_error(f"[bold]{host}:{port}[/bold] not found")
-        return
-
-    if default:
-        host, _, port_str = default.partition(":")
-        port = int(port_str) if port_str else DEFAULT_PORT
-        if set_default_host(host, port):
-            _print_ok(f"Set [bold]{host}:{port}[/bold] as default")
-        else:
-            _print_error(f"[bold]{host}:{port}[/bold] not found — connect to it first")
-        return
-
-    known = list_hosts()
-    if not known:
-        console.print("No known hosts.")
-        console.print(f"  Save one: [bold]pko connect 192.168.1.50:42000[/bold]")
-        return
-
-    table = Table(title="Known Hosts")
-    table.add_column("Host:Port", style="cyan")
-    table.add_column("Default", style="blue")
-
-    for h in known:
-        table.add_row(f"{h['host']}:{h['port']}", "✓" if h["default"] else "—")
-    console.print(table)
 
 
 # ── Info ─────────────────────────────────────────────────────────────
@@ -497,6 +459,58 @@ def logs(
             await client.close()
 
     asyncio.run(run())
+
+
+# ── Profile ──────────────────────────────────────────────────────────
+
+@app.command()
+def profile(
+    name: Optional[str] = typer.Argument(None, help="Profile name to show or delete (defaults to listing all)"),
+    delete: bool = typer.Option(False, "--delete", help="Delete the profile"),
+    default: bool = typer.Option(False, "--default", help="Set as default profile"),
+):
+    """Manage saved connection profiles. Most users won't need this — 'pko connect' already manages a single default profile for you."""
+    if name and delete:
+        if remove_profile(name):
+            _print_ok(f"Deleted profile [bold]{name}[/bold]")
+        else:
+            _print_error(f"Profile [bold]{name}[/bold] not found")
+        return
+
+    if name and default:
+        if set_default_profile(name):
+            _print_ok(f"Set [bold]{name}[/bold] as default profile")
+        else:
+            _print_error(f"Profile [bold]{name}[/bold] not found")
+        return
+
+    if name:
+        profile_data = get_profile(name)
+        if not profile_data:
+            _print_error(f"Profile [bold]{name}[/bold] not found")
+            return
+        console.print(Panel(
+            f"Host: [cyan]{profile_data.get('host', '?')}[/cyan]\n"
+            f"Port: [green]{profile_data.get('port', '?')}[/green]",
+            title=f"Profile: {name}",
+        ))
+        return
+
+    profiles = list_profiles()
+    if not profiles:
+        console.print("No profiles configured.")
+        console.print(f"  Create one: [bold]pko connect 192.168.1.50:42000[/bold]")
+        return
+
+    table = Table(title="Connection Profiles")
+    table.add_column("Name", style="cyan")
+    table.add_column("Host", style="green")
+    table.add_column("Port", style="yellow")
+    table.add_column("Default", style="blue")
+
+    for p in profiles:
+        table.add_row(p["name"], p["host"], str(p["port"]), "✓" if p["default"] else "—")
+    console.print(table)
 
 
 # ── Restart ──────────────────────────────────────────────────────────

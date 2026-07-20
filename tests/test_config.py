@@ -1,4 +1,4 @@
-"""Tests for pko config module (host:port storage, no profile names)."""
+"""Tests for pko config module (named profiles, optional name)."""
 import os
 import tempfile
 from pathlib import Path
@@ -9,11 +9,13 @@ import pytest
 from pko.config import (
     load_config,
     save_config,
-    add_host,
-    set_default_host,
-    forget_host,
-    list_hosts,
+    add_profile,
+    get_profile,
+    set_default_profile,
+    remove_profile,
+    list_profiles,
     get_default_instance,
+    DEFAULT_PROFILE_NAME,
 )
 
 
@@ -33,66 +35,72 @@ def temp_config():
 class TestConfigLoadSave:
     def test_load_empty(self):
         cfg = load_config()
-        assert cfg == {"hosts": [], "default": None}
+        assert cfg == {"profiles": {}, "default_profile": None}
 
     def test_save_and_load(self):
-        cfg = {"hosts": [{"host": "10.0.0.1", "port": 42000}], "default": {"host": "10.0.0.1", "port": 42000}}
+        cfg = {"profiles": {"test": {"host": "10.0.0.1", "port": 42000}}, "default_profile": "test"}
         save_config(cfg)
         loaded = load_config()
-        assert loaded["hosts"][0]["host"] == "10.0.0.1"
-        assert loaded["default"]["host"] == "10.0.0.1"
+        assert loaded["profiles"]["test"]["host"] == "10.0.0.1"
+        assert loaded["default_profile"] == "test"
 
 
-class TestAddHost:
+class TestAddProfile:
+    def test_defaults_to_default_name(self):
+        add_profile("192.168.1.50", 42000)
+        profile = get_profile()  # name defaults to "default" too
+        assert profile["host"] == "192.168.1.50"
+        assert profile["port"] == 42000
+
     def test_add_sets_default(self):
-        add_host("192.168.1.50", 42000)
-        hosts = list_hosts()
-        assert len(hosts) == 1
-        assert hosts[0]["host"] == "192.168.1.50"
-        assert hosts[0]["default"] is True
+        add_profile("192.168.1.50", 42000)
+        profiles = list_profiles()
+        assert len(profiles) == 1
+        assert profiles[0]["name"] == DEFAULT_PROFILE_NAME
+        assert profiles[0]["default"] is True
 
-    def test_add_duplicate_no_dupe_entry(self):
-        add_host("10.0.0.1", 42000)
-        add_host("10.0.0.1", 42000)
-        assert len(list_hosts()) == 1
+    def test_named_profile(self):
+        add_profile("10.0.0.1", 42000, name="secondary")
+        profile = get_profile("secondary")
+        assert profile["host"] == "10.0.0.1"
 
     def test_second_add_without_default_keeps_first_default(self):
-        add_host("10.0.0.1", 42000, set_default=True)
-        add_host("10.0.0.2", 42000, set_default=False)
-        hosts = {h["host"]: h["default"] for h in list_hosts()}
-        assert hosts["10.0.0.1"] is True
-        assert hosts["10.0.0.2"] is False
+        add_profile("10.0.0.1", 42000, name="a", set_default=True)
+        add_profile("10.0.0.2", 42000, name="b", set_default=False)
+        profiles = {p["name"]: p["default"] for p in list_profiles()}
+        assert profiles["a"] is True
+        assert profiles["b"] is False
 
 
-class TestSetDefaultHost:
-    def test_set_known_host(self):
-        add_host("10.0.0.1", 42000)
-        add_host("10.0.0.2", 42000, set_default=False)
-        assert set_default_host("10.0.0.2", 42000) is True
-        hosts = {h["host"]: h["default"] for h in list_hosts()}
-        assert hosts["10.0.0.2"] is True
-        assert hosts["10.0.0.1"] is False
+class TestSetDefaultProfile:
+    def test_set_known_profile(self):
+        add_profile("10.0.0.1", 42000, name="a")
+        add_profile("10.0.0.2", 42000, name="b", set_default=False)
+        assert set_default_profile("b") is True
+        profiles = {p["name"]: p["default"] for p in list_profiles()}
+        assert profiles["b"] is True
+        assert profiles["a"] is False
 
-    def test_set_unknown_host_fails(self):
-        assert set_default_host("nope", 42000) is False
+    def test_set_unknown_profile_fails(self):
+        assert set_default_profile("nope") is False
 
 
-class TestForgetHost:
-    def test_forget_removes_entry(self):
-        add_host("10.0.0.1", 42000)
-        assert forget_host("10.0.0.1", 42000) is True
-        assert list_hosts() == []
+class TestRemoveProfile:
+    def test_remove_deletes_entry(self):
+        add_profile("10.0.0.1", 42000, name="a")
+        assert remove_profile("a") is True
+        assert get_profile("a") is None
 
-    def test_forget_unknown_fails(self):
-        assert forget_host("ghost", 42000) is False
+    def test_remove_unknown_fails(self):
+        assert remove_profile("ghost") is False
 
-    def test_forgetting_default_promotes_next(self):
-        add_host("10.0.0.1", 42000)
-        add_host("10.0.0.2", 42000, set_default=False)
-        forget_host("10.0.0.1", 42000)
-        hosts = list_hosts()
-        assert len(hosts) == 1
-        assert hosts[0]["default"] is True
+    def test_removing_default_promotes_next(self):
+        add_profile("10.0.0.1", 42000, name="a")
+        add_profile("10.0.0.2", 42000, name="b", set_default=False)
+        remove_profile("a")
+        profiles = list_profiles()
+        assert len(profiles) == 1
+        assert profiles[0]["default"] is True
 
 
 class TestDefaultInstance:
@@ -118,14 +126,14 @@ class TestDefaultInstance:
         assert inst.port == 42001
 
     @patch.dict(os.environ, {}, clear=True)
-    def test_uses_saved_default(self):
-        add_host("10.0.0.7", 42000)
+    def test_uses_default_profile(self):
+        add_profile("10.0.0.7", 42000)
         inst = get_default_instance()
         assert inst.host == "10.0.0.7"
         assert inst.source == "config"
 
     @patch.dict(os.environ, {"PKO_HOST": "10.0.0.8", "PKO_PORT": "42000"}, clear=True)
-    def test_env_overrides_saved_default(self):
-        add_host("10.0.0.7", 42000)
+    def test_env_overrides_default_profile(self):
+        add_profile("10.0.0.7", 42000)
         inst = get_default_instance()
         assert inst.host == "10.0.0.8"

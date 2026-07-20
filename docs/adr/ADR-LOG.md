@@ -8,11 +8,11 @@ list and how to re-query them via deepwiki.
 
 ---
 
-## ADR-006: Drop named profiles, use host:port only (2026-07-19)
+## ADR-006: Named profiles kept, but name is optional (defaults to "default") (2026-07-19)
 
-**What:** Removed the profile-name concept from `config.py`/`connect`/`profile` entirely. Servers are now referred to purely by `host:port`; config stores a flat list of known hosts + one default. `connect` takes a single `host:port` argument; `profile` is replaced by `hosts` (list/`--default`/`--forget`).
+**What:** `config.py` keeps named profiles internally (`profiles: {name: {host, port}}` + `default_profile` pointer). User-facing surface: `connect <host:port>` takes an *optional* `--name` flag defaulting to `"default"`; `profile` (list/show/`--delete`/`--default`) manages them. `discover --save` likewise saves under the default name.
 
-**Why:** User doesn't expect to need named profiles — host:port is sufficient and removes a layer of indirection. Also fixed a real bug this surfaced: `get_profile()` always read the `"default"` profile regardless of what `set_default_profile()` had set, so `pko connect` silently had no effect on subsequent commands.
+**Why:** Initial pass dropped named profiles entirely (host:port-only), but the user course-corrected: profiles make sense as an internal mechanism, they just didn't want profile *names* to be a mandatory user-facing concept. This is the compromise — optional flag, sane default, full functionality preserved for anyone who wants multiple saved servers. Also fixed a real bug in the process: `get_profile()` previously always read the hardcoded `"default"` key regardless of what `set_default_profile()` had set, so `connect` silently had no effect on subsequent commands.
 
 ---
 

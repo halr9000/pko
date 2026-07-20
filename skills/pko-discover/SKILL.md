@@ -1,6 +1,6 @@
 ---
 name: pko-discover
-description: Discover Pinokio instances on localhost, remote hosts, or save known host:port targets for later use. Use when the task is "find Pinokio", "connect to Pinokio", "scan for instances", or "save a host".
+description: Discover Pinokio instances on localhost, remote hosts, or save connection profiles for later use. Use when the task is "find Pinokio", "connect to Pinokio", "scan for instances", or "save a profile".
 metadata:
   author: pko
   version: "0.2.0"
@@ -8,7 +8,7 @@ metadata:
 
 # pko-discover: Discover Pinokio Instances
 
-Find local or remote Pinokio instances by scanning well-known ports, or save a host:port for repeated use.
+Find local or remote Pinokio instances by scanning well-known ports, or save a connection profile for repeated use.
 
 ## How It Works
 
@@ -26,28 +26,34 @@ uvx pko discover --host 192.168.1.50
 # Scan and save the first found instance as default in one step
 uvx pko discover --host 192.168.1.50 --save
 
-# Save a known instance as default
+# Save a discovered instance (name is optional, defaults to "default")
 uvx pko connect 192.168.1.50:42000
 
-# List saved hosts
-uvx pko hosts
+# List saved profiles
+uvx pko profile
+
+# View a specific profile
+uvx pko profile my-server
 ```
 
-## Known Hosts
+## Profiles
 
-Known hosts are stored in `~/.config/pko/config.json`, referenced purely by
-`host:port` — there is no separate profile-name concept. Each entry stores:
+Connection profiles are stored in `~/.config/pko/config.json`. The profile
+name is an internal detail — most users never need to think about it and
+can just use `pko connect host:port`, which saves under a profile named
+"default". Pass `--name` only if you need multiple saved servers:
+
+```bash
+uvx pko connect 10.0.0.5:42000 --name secondary
+```
+
+Each profile stores:
 - `host` — the instance hostname/IP
 - `port` — the port number
 
-Set a saved host as default:
+Set a profile as default:
 ```bash
-uvx pko hosts --default 192.168.1.50:42000
-```
-
-Forget a saved host:
-```bash
-uvx pko hosts --forget 192.168.1.50:42000
+uvx pko profile secondary --default
 ```
 
 ## Environment Variables
