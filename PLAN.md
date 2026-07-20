@@ -49,6 +49,46 @@
 | Proxy management | `GET /proxy`, `POST /proxy` | HTTP GET/POST |
 | Cloudflare tunnel | `POST /publish`, `POST /unpublish` | HTTP POST |
 
+## Implementation Roadmap
+
+Concrete build order for the remaining pre-1.0 work (app CRUD is the 1.0
+gate per user directive). Supersedes any prior informal ordering discussed
+in chat — this is the source of truth.
+
+1. **`start`/`stop`** — WebSocket payload shapes already confirmed via the
+   vendored `pterm/script.js` reference (ADR-005): `start` sends
+   `{uri, source, client, input}`; `stop` sends
+   `{method: "kernel.api.stop", params: {uri}}`. Wiring, not discovery —
+   lowest risk, highest payoff, do this first.
+2. **Logs command redesign (ADR-002)** — full phased rewrite of `pko logs`
+   from the legacy `/getlog` implementation to the discovery+SSE model.
+   Endpoints confirmed live against mando. Phases (see "Logs Command
+   Redesign (ADR-002)" below for full detail — endpoint contracts, on-disk
+   layout, verified example responses):
+   - **Phase A — discovery & basic read** (blocks everything else): add
+     `list_log_tree`/`read_log_file` to `client.py`; `pko logs --list [APP]`
+     tree view; `pko logs [APP]` defaults to latest transcript (app) or
+     `stdout.txt` (server); mocked + one live integration test.
+   - **Phase B — follow (SSE)**: `stream_log()` via `httpx` SSE streaming;
+     `--follow`/`-f` flag; mocked SSE test.
+   - **Phase C — filtering (best-effort)**: `--lines`/`-n`, `--search`,
+     `--level` (heuristic, documented as approximate), `--since`.
+   - **Phase D — polish**: `--zip` full-archive download; update
+     `AGENTS.md`/skills usage patterns; update README command table +
+     `pko logs --help`.
+   - Breaking change, acceptable pre-1.0 — no back-compat shim for the old
+     `--path`/`--tail` flat interface.
+3. **`install`** — git-clone-based install flow, reuses the WebSocket
+   mechanics and progress-streaming patterns established in step 1/2.
+4. **`create-app`** — agent-assisted scaffolding per ADR-003's
+   `proto/AGENTS.md` hand-off; distinct from `install`. Bigger design lift
+   (open questions in ADR-003's "Open questions" section still unresolved)
+   — start after 1-3 land.
+5. **Community features** (login/publish/search/notifications) — lowest
+   priority, no research done yet on HTTP-API availability vs.
+   desktop-app-only. Re-evaluate scope against ADR-005's pterm findings
+   before starting.
+
 ### Phase 3 — Community & Discover
 
 | Operation | pinokiod API | Method |
