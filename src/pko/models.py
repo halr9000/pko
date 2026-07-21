@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from dataclasses import dataclass, field
-from typing import Optional
 
 
 @dataclass
@@ -47,7 +46,7 @@ class SystemInfo:
     """
     platform: str = ""
     arch: str = ""
-    version: str = ""
+    version: dict = field(default_factory=dict)
     memory: dict = field(default_factory=dict)
     gpu: dict = field(default_factory=dict)
     home: str = ""
@@ -70,7 +69,7 @@ class PinokioScript:
     run: list[ScriptStep] = field(default_factory=list)
     menu: list[dict] = field(default_factory=list)
     pre: list[ScriptStep] = field(default_factory=list)
-    start: Optional[list] = None
+    start: list | None = None
     version: str = ""
 
 

@@ -6,17 +6,15 @@ and env-var-based configuration.
 
 from __future__ import annotations
 
-import asyncio
 import socket
-from typing import Optional
 
 import httpx
 
-from .models import PinokioInstance, KNOWN_PORTS, DEFAULT_PORT
 from .config import get_default_instance
+from .models import DEFAULT_PORT, KNOWN_PORTS, PinokioInstance
 
 
-async def probe_instance(host: str, port: int, timeout: float = 2.0) -> Optional[PinokioInstance]:
+async def probe_instance(host: str, port: int, timeout: float = 2.0) -> PinokioInstance | None:
     """Check if pinokiod is running at host:port."""
     try:
         async with httpx.AsyncClient(
@@ -57,8 +55,8 @@ async def discover_remote(host: str, timeout: float = 2.0) -> list[PinokioInstan
 
 
 def resolve_instance(
-    host: Optional[str] = None,
-    port: Optional[int] = None,
+    host: str | None = None,
+    port: int | None = None,
 ) -> PinokioInstance:
     """Resolve a Pinokio instance from CLI args, env, or config."""
     if host:

@@ -1,18 +1,17 @@
 """HTTP + WebSocket client for pinokiod."""
-
 from __future__ import annotations
 
 import json
 import re
-from typing import Any, AsyncIterator, Callable, Optional
+from collections.abc import AsyncIterator, Callable
 
 import httpx
+import websockets
 
 from .models import AppInfo, PinokioInstance, SystemInfo, WsPacket
-from .config import CONFIG_DIR
 
 
-def _extract_js_module_fields(source: str) -> Optional[dict]:
+def _extract_js_module_fields(source: str) -> dict | None:
     """Best-effort extraction of literal string fields from a pinokio.js
     CommonJS module (`module.exports = {...}`).
 
@@ -113,7 +112,7 @@ class Client:
                     apps.append({"name": item})
         return apps
 
-    async def read_pinokio_js(self, app_name: str) -> Optional[dict]:
+    async def read_pinokio_js(self, app_name: str) -> dict | None:
         """Read pinokio.js/index.json metadata for an app.
 
         pinokio.js is typically a real JavaScript module
@@ -177,14 +176,14 @@ class Client:
         r = await self._http.post("/restart")
         return r.status_code == 200
 
-    async def disk_usage(self, app_name: str) -> Optional[str]:
+    async def disk_usage(self, app_name: str) -> str | None:
         """GET /du/:name — disk usage for an app."""
         r = await self._http.get(f"/du/{app_name}")
         if r.status_code != 200:
             return None
         return r.text
 
-    async def get_app_status(self, app_name: str) -> Optional[dict]:
+    async def get_app_status(self, app_name: str) -> dict | None:
         """GET /apps/status/:id — rich per-app status.
 
         Discovered via the vendored pterm/util.js reference (ADR-005):
@@ -205,7 +204,7 @@ class Client:
         except (json.JSONDecodeError, httpx.HTTPError):
             return None
 
-    async def get_app_metadata(self, app_name: str) -> Optional[AppInfo]:
+    async def get_app_metadata(self, app_name: str) -> AppInfo | None:
         """Rich metadata for an app: prefer /apps/status/:id (title,
         description, icon, running state all in one call — see
         get_app_status), fall back to reading pinokio.js/index.json
@@ -245,22 +244,15 @@ class WsClient:
 
     def __init__(self, instance: PinokioInstance):
         self.instance = instance
-        self._ws = None
-
-    async def connect(self) -> None:
-        import websockets
-        self._ws = await websockets.connect(self.instance.ws_url)
 
     async def run_script(
         self,
         uri: str,
         mode: str = "run",
-        input_data: Optional[dict] = None,
-        on_packet: Optional[Callable[[WsPacket], None]] = None,
+        input_data: dict | None = None,
+        on_packet: Callable[[WsPacket], None] | None = None,
     ) -> AsyncIterator[WsPacket]:
         """Run a script via WebSocket and stream packets."""
-        from websockets import connect as ws_connect
-
         payload = {
             "uri": uri,
             "mode": mode,
@@ -268,7 +260,7 @@ class WsClient:
             "client": {"cols": 80, "rows": 24},
         }
 
-        async with ws_connect(self.instance.ws_url) as ws:
+        async with websockets.connect(self.instance.ws_url) as ws:
             await ws.send(json.dumps(payload))
             async for raw in ws:
                 try:
@@ -287,23 +279,19 @@ class WsClient:
 
     async def stop_script(self, uri: str) -> None:
         """Send stop command via WebSocket."""
-        from websockets import connect as ws_connect
-
         payload = {
             "method": "kernel.api.stop",
             "params": {"uri": uri},
         }
 
-        async with ws_connect(self.instance.ws_url) as ws:
+        async with websockets.connect(self.instance.ws_url) as ws:
             await ws.send(json.dumps(payload))
 
     async def check_status(self, uri: str) -> bool:
         """Check if a script is running."""
-        from websockets import connect as ws_connect
-
         payload = {"uri": uri, "status": True}
 
-        async with ws_connect(self.instance.ws_url) as ws:
+        async with websockets.connect(self.instance.ws_url) as ws:
             await ws.send(json.dumps(payload))
             async for raw in ws:
                 try:
@@ -312,7 +300,3 @@ class WsClient:
                 except json.JSONDecodeError:
                     continue
         return False
-
-    async def close(self) -> None:
-        if self._ws:
-            await self._ws.close()

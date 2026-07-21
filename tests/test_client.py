@@ -1,13 +1,12 @@
 """Tests for pko HTTP client (mocked and integration)."""
 import json
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
 import httpx
 import pytest
 
 from pko.client import Client, WsClient
 from pko.models import PinokioInstance
-
 
 LOCAL = PinokioInstance(host="localhost", port=42000, is_local=True)
 
@@ -229,7 +228,139 @@ class TestClientGetAppStatus:
             await c.close()
 
 
+class TestClientGetLogs:
+    async def test_success(self):
+        async def mock_get(*a, **kw):
+            return httpx.Response(200, text="line1\nline2\nline3\n")
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            logs = await c.get_logs("stdout.txt")
+            assert logs == "line1\nline2\nline3\n"
+            await c.close()
+
+    async def test_not_found(self):
+        async def mock_get(*a, **kw):
+            return httpx.Response(404)
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            logs = await c.get_logs("nonexistent.txt")
+            assert logs == ""
+            await c.close()
+
+
+class TestClientRestart:
+    async def test_success(self):
+        async def mock_post(*a, **kw):
+            return httpx.Response(200)
+
+        with patch.object(httpx.AsyncClient, "post", mock_post):
+            c = Client(LOCAL)
+            assert await c.restart() is True
+            await c.close()
+
+    async def test_failure(self):
+        async def mock_post(*a, **kw):
+            return httpx.Response(500)
+
+        with patch.object(httpx.AsyncClient, "post", mock_post):
+            c = Client(LOCAL)
+            assert await c.restart() is False
+            await c.close()
+
+
+class TestClientDiskUsage:
+    async def test_success(self):
+        async def mock_get(*a, **kw):
+            return httpx.Response(200, text="1.2GB")
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            du = await c.disk_usage("testapp")
+            assert du == "1.2GB"
+            await c.close()
+
+    async def test_not_found(self):
+        async def mock_get(*a, **kw):
+            return httpx.Response(404)
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            du = await c.disk_usage("nonexistent")
+            assert du is None
+            await c.close()
+
+
+class TestExtractJsModuleFields:
+    def test_extracts_fields(self):
+        from pko.client import _extract_js_module_fields
+        source = '''
+module.exports = {
+    title: "Test App",
+    description: "A test app for pko",
+    icon: "icon.png",
+    version: "1.0.0",
+    menu: async function() {}
+};
+'''
+        result = _extract_js_module_fields(source)
+        assert result is not None
+        assert result["title"] == "Test App"
+        assert result["description"] == "A test app for pko"
+        assert result["icon"] == "icon.png"
+        assert result["version"] == "1.0.0"
+
+    def test_not_a_module(self):
+        from pko.client import _extract_js_module_fields
+        result = _extract_js_module_fields('{"title": "JSON"}')
+        assert result is None
+
+    def test_no_matching_fields(self):
+        from pko.client import _extract_js_module_fields
+        source = '''
+module.exports = {
+    menu: async function() { return []; }
+};
+'''
+        result = _extract_js_module_fields(source)
+        assert result is None
+
+
+class TestClientListAppsStringItems:
+    async def test_string_items(self):
+        mock_data = [{"name": "comfyui"}, "bare-string-item"]
+        req = httpx.Request("GET", "http://localhost:42000/pinokio/fs")
+
+        async def mock_get(*a, **kw):
+            return httpx.Response(200, json=mock_data, request=req)
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            apps = await c.list_apps()
+            assert len(apps) == 2
+            assert apps[0]["name"] == "comfyui"
+            assert apps[1]["name"] == "bare-string-item"
+            await c.close()
+
+
 class TestClientGetAppMetadata:
+
+    async def test_status_and_du_both_fail(self):
+        async def mock_get(*a, **kw):
+            url = str(a[1]) if len(a) > 1 else ""
+            if "/apps/status/" in url:
+                return httpx.Response(404)
+            if "/du/" in url:
+                return httpx.Response(404)
+            return httpx.Response(404)
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            meta = await c.get_app_metadata("nonexistent")
+            assert meta is None
+            await c.close()
+
     async def test_found_via_status_endpoint(self):
         mock_status = {
             "app_id": "testapp",

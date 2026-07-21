@@ -1,10 +1,9 @@
 """Tests for pko discovery module."""
-from unittest.mock import AsyncMock, patch
+from unittest.mock import patch
 
-import pytest
 import httpx
 
-from pko.discover import probe_instance, discover_local, resolve_instance
+from pko.discover import discover_local, probe_instance, resolve_instance
 from pko.models import PinokioInstance
 
 

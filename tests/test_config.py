@@ -7,15 +7,15 @@ from unittest.mock import patch
 import pytest
 
 from pko.config import (
-    load_config,
-    save_config,
-    add_profile,
-    get_profile,
-    set_default_profile,
-    remove_profile,
-    list_profiles,
-    get_default_instance,
     DEFAULT_PROFILE_NAME,
+    add_profile,
+    get_default_instance,
+    get_profile,
+    list_profiles,
+    load_config,
+    remove_profile,
+    save_config,
+    set_default_profile,
 )
 
 

@@ -12,10 +12,8 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
-from typing import Optional
 
 from .models import PinokioInstance
-
 
 CONFIG_DIR = Path.home() / ".config" / "pko"
 CONFIG_FILE = CONFIG_DIR / "config.json"
@@ -58,7 +56,7 @@ def add_profile(host: str, port: int, name: str = DEFAULT_PROFILE_NAME, set_defa
     save_config(config)
 
 
-def get_profile(name: str = DEFAULT_PROFILE_NAME) -> Optional[dict]:
+def get_profile(name: str = DEFAULT_PROFILE_NAME) -> dict | None:
     """Look up a profile by name. Returns None if it doesn't exist."""
     config = load_config()
     return config.get("profiles", {}).get(name)
@@ -93,7 +91,12 @@ def list_profiles() -> list[dict]:
     config = load_config()
     default = config.get("default_profile")
     return [
-        {"name": name, "host": data.get("host", "localhost"), "port": data.get("port", 42000), "default": name == default}
+        {
+            "name": name,
+            "host": data.get("host", "localhost"),
+            "port": data.get("port", 42000),
+            "default": name == default,
+        }
         for name, data in config.get("profiles", {}).items()
     ]
 
