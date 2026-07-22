@@ -5,7 +5,7 @@
 ## Quick Start
 
 ```bash
-# Zero-install (recommended)
+# Zero-install
 uvx pko discover
 uvx pko list
 uvx pko info
@@ -16,7 +16,7 @@ npx skills add path/to/pko --skill pko-install
 npx skills add path/to/pko --skill pko-start
 
 # Once published to GitHub
-npx skills add owner/pko
+npx skills add halr9000/pko
 
 # Connect to an instance
 uvx pko connect 192.168.1.50:42000
@@ -28,34 +28,35 @@ uvx pko list
 uvx pko info
 
 # Check app status
-uvx pko status comfyui
+uvx pko status hello-world
 
 # Rich metadata for one app
-uvx pko inspect comfyui
+uvx pko inspect hello-world
+
+# Install, start, stop
+uvx pko install https://github.com/halr9000/pinokio-hello-world
+uvx pko start hello-world
+uvx pko stop hello-world
 ```
 
-## API Design
+## Commands
 
-pko wraps the pinokiod HTTP + WebSocket API into a clean CLI. All commands accept `--host` and `--port` for targeting remote instances, or use the saved default host.
-
-### Command Groups
-
-| Command | Description | Phase |
-|---------|-------------|-------|
-| `discover` | Find Pinokio instances on localhost or remote host | 1 |
-| `connect` | Save a connection profile (name optional, defaults to "default") | 1 |
-| `profile` | Manage connection profiles | 1 |
-| `list` | List installed apps | 1 |
-| `info` | System information (diagnostics only) | 1 |
-| `status` | Check if an app is running (`GET /apps/status/:id` for single app; `--all` lists everyone) | 1 |
-| `inspect` | Rich per-app metadata: title, description, disk usage, running state | 1 |
-| `config` | Get/set environment configuration | 2 |
-| `logs` | View server logs | 2 |
-| `restart` | Restart the server | 2 |
-| `delete` | Delete an app or cache | 1 |
-| `install` | Install an app from git | 1 |
-| `start` | Start an app | 1 |
-| `stop` | Stop an app | 1 |
+| Command | Description |
+|---------|-------------|
+| `discover` | Find Pinokio instances on localhost or remote host |
+| `connect` | Save a connection profile (name optional, defaults to "default") |
+| `profile` | Manage connection profiles |
+| `list` | List installed apps |
+| `status` | Check if an app is running |
+| `inspect` | Rich per-app metadata: title, description, disk usage, running state |
+| `start` | Start an app via WebSocket |
+| `stop` | Stop a running app via WebSocket |
+| `install` | Install an app from git |
+| `delete` | Delete an app or cache |
+| `config` | Get/set environment configuration |
+| `logs` | View server logs |
+| `restart` | Restart the server |
+| `info` | System information (diagnostics only) |
 
 ## Architecture
 
@@ -64,91 +65,44 @@ pko/
 ├── src/pko/
 │   ├── __init__.py       # Version
 │   ├── __main__.py       # python -m pko
-│   ├── main.py           # Typer CLI (all commands)
-│   ├── client.py         # HTTP + WebSocket client
+│   ├── main.py           # Typer CLI entry point (imports from submodules)
+│   ├── app.py            # App lifecycle commands (list, status, start, stop, install, delete, inspect)
+│   ├── system.py         # System/config commands (info, config, logs, restart)
+│   ├── client.py         # HTTP + WebSocket client + run_client helper
 │   ├── discover.py       # Instance discovery (scan ports)
 │   ├── config.py         # Profile/config management
-│   └── models.py         # Data models
+│   ├── models.py         # Data models (AppStatus, AppInfo, SystemInfo, WsPacket)
+│   └── ui.py             # Shared UI helpers (console, print_ok, print_error)
 ├── skills/               # Agent skills
+│   ├── pko-discover.md
 │   ├── pko-install.md
-│   ├── pko-start.md
-│   └── pko-discover.md
+│   └── pko-start.md
+├── tests/                # Unit + integration tests
 ├── AGENTS.md             # This file
 ├── README.md             # User documentation
 ├── PLAN.md               # Architecture & roadmap
 └── pyproject.toml         # Build config
 ```
 
-## Protocol Reference
-
-### pinokiod HTTP API
-
-| Endpoint | Method | Purpose |
-|----------|--------|---------|
-| `/check` | GET | Health check → `{success: true}` |
-| `/pinokio/info` | GET | System info (platform, arch, memory, GPU, version) |
-| `/apps/status/:id` | GET | Rich per-app status (running/ready state, title, description, icon, ready_url) — discovered via vendored pterm/util.js reference, see ADR-004/ADR-005 |
-| `/pinokio/port` | GET | Get an available port → `{result: number}` |
-| `/pinokio/fs?drive=api&path=/` | GET | List installed apps |
-| `/pinokio/fs?drive=api&path=<name>/pinokio.js` | GET | Read app metadata |
-| `/pinokio/fs?drive=api&path=../ENVIRONMENT` | GET | Read global config |
-| `/pinokio/delete` | POST | Delete app/cache: `{type, name}` |
-| `/restart` | POST | Restart server |
-| `/getlog` | GET | View logs: `?logpath=...` |
-| `/du/:name` | GET | Disk usage for app |
-
-### pinokiod WebSocket Protocol
-
-Messages are JSON with `{type, id, data, index}`:
-
-| Type | Direction | Purpose |
-|------|-----------|---------|
-| `stream` | Server→Client | Terminal output / data stream |
-| `result` | Server→Client | Step completion result |
-| `event` | Server→Client | System events (stop, etc.) |
-| `error` | Server→Client | Error messages |
-| `start` | Server→Client | Script execution started |
-| `connect` | Server→Client | Connection established |
-| `disconnect` | Server→Client | Connection closed |
-| `wait` | Server→Client | Waiting for user input |
-| `input` | Server→Client | Requesting user input |
-| `modal` | Server→Client | Display modal |
-| `notify` | Server→Client | Desktop notification |
-
-**Client sends** to run a script:
-```json
-{
-  "uri": "/api/myapp/index.json",
-  "mode": "run",
-  "input": {},
-  "client": {"cols": 80, "rows": 24}
-}
-```
-
-**Client sends** to stop a script:
-```json
-{
-  "method": "kernel.api.stop",
-  "params": {"uri": "/api/myapp/index.json"}
-}
-```
-
 ## Common Patterns
 
-### For agents managing Pinokio
+### For agents
 
-1. **Discover first**: Always run `pko discover` to find instances before connecting
-2. **Save known hosts**: Use `pko connect <host>:<port>` for repeatable connections (name is optional)
-3. **Check health before operations**: `pko info` to verify the instance is responsive
-4. **App lifecycle**: `pko list` → `pko status <app>` → `pko start <app>` or `pko stop <app>`
-5. **Config changes**: Use `pko config` to read values; for writes, edit the ENVIRONMENT file
+1. **Discover first** — Always run `pko discover` to find instances before connecting
+2. **Save known hosts** — Use `pko connect <host>:<port>` for repeatable connections (name is optional)
+3. **Check health before operations** — `pko info` to verify the instance is responsive
+4. **App lifecycle** — `pko list` → `pko status <app>` → `pko start <app>` or `pko stop <app>`
+5. **Install from git** — `pko install https://github.com/<owner>/<repo>` for local instances
+6. **Logs** — `pko logs --path stdout.txt --tail 50` (path varies by instance)
 
-### For human users
+### For humans
 
 - `uvx pko discover` — find instances
 - `uvx pko connect localhost:42000` — save default host
-- `uvx pko info` — check system
 - `uvx pko list` — see installed apps
+- `uvx pko start hello-world` — start an app
+- `uvx pko stop hello-world` — stop an app
+- `uvx pko info` — check system
 - `uvx pko config` — see environment variables
 
 ## Skills
@@ -163,5 +117,5 @@ See `skills/` directory for standard `SKILL.md` agent skills compatible with `np
 
 Install all at once (once published to GitHub):
 ```bash
-npx skills add owner/pko
+npx skills add halr9000/pko
 ```

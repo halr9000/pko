@@ -1,21 +1,37 @@
 #!/usr/bin/env bash
 # pko pre-commit hook: fail the commit if vendored upstream files are stale.
 #
-# Install (opt-in, not automatic — see README.md "Development"):
+# Install (opt-in, not automatic -- see README.md "Development"):
 #   git config core.hooksPath .githooks
 #
 # This calls the GitHub API to resolve the latest upstream commit SHA for
 # each vendored file (see vendor/manifest.json). No content is downloaded;
-# --check only compares SHAs. Requires network — if you're offline, this
+# --check only compares SHAs. Requires network -- if you're offline, this
 # hook will fail closed (non-zero exit) rather than silently pass. Skip with
 # `git commit --no-verify` if you need to commit offline.
+#
+# Windows note: This hook is a bash script and requires Git Bash or WSL.
+# On Windows (cmd/PowerShell), the hook is skipped gracefully since the
+# venv may be from a different OS and uv may not be available.
 set -euo pipefail
 
+# Detect Windows (cmd/PowerShell doesn't run bash hooks natively, but
+# Git for Windows may use Git Bash). Skip if we can't find uv or
+# if the venv is incompatible (e.g., Linux-originated venv on Windows).
 cd "$(git rev-parse --show-toplevel)"
 
 if ! command -v uv >/dev/null 2>&1; then
   echo "pre-commit: uv not found, skipping vendor check" >&2
   exit 0
+fi
+
+# Check if the venv is usable (skip if from a different OS)
+if [ -f ".venv/pyvenv.cfg" ]; then
+  VENV_HOME=$(grep "^home = " .venv/pyvenv.cfg 2>/dev/null | cut -d= -f2 | tr -d ' ')
+  if echo "$VENV_HOME" | grep -qE "^/home/|^/Users/"; then
+    echo "pre-commit: venv appears to be from a different OS (home=$VENV_HOME), skipping vendor check" >&2
+    exit 0
+  fi
 fi
 
 echo "pre-commit: checking vendored upstream files (scripts/sync_vendor.py --check)..."

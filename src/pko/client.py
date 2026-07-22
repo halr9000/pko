@@ -1,14 +1,28 @@
 """HTTP + WebSocket client for pinokiod."""
 from __future__ import annotations
 
+import asyncio
 import json
+import os
 import re
 from collections.abc import AsyncIterator, Callable
+from pathlib import PurePosixPath, PureWindowsPath
 
 import httpx
 import websockets
 
-from .models import AppInfo, PinokioInstance, SystemInfo, WsPacket
+from .models import AppInfo, AppStatus, PinokioInstance, SystemInfo, WsPacket
+
+
+def _format_bytes(n: int | float) -> str:
+    """Convert a byte count to a human-readable string (e.g. 218911011 → "209 MB")."""
+    for unit in ("B", "KB", "MB", "GB", "TB", "PB"):
+        if abs(n) < 1024.0:
+            if unit == "B":
+                return f"{int(n)} B"
+            return f"{n:.1f} {unit}"
+        n /= 1024.0
+    return f"{n:.1f} EB"
 
 
 def _extract_js_module_fields(source: str) -> dict | None:
@@ -33,6 +47,25 @@ def _extract_js_module_fields(source: str) -> dict | None:
     return fields or None
 
 
+async def run_client(
+    instance: PinokioInstance,
+    handler: Callable,
+) -> bool:
+    """Create a Client, health-check, run handler, then close.
+
+    Returns True if the handler ran; False if the health check failed.
+    """
+    client = Client(instance)
+    try:
+        ok = await client.health()
+        if not ok:
+            return False
+        await handler(client, instance)
+        return True
+    finally:
+        await client.close()
+
+
 class Client:
     """HTTP client for pinokiod REST API."""
 
@@ -52,7 +85,7 @@ class Client:
         try:
             r = await self._http.get("/check")
             return r.status_code == 200
-        except httpx.ConnectError:
+        except httpx.HTTPError:
             return False
 
     async def info(self) -> SystemInfo:
@@ -63,11 +96,32 @@ class Client:
         return SystemInfo(
             platform=data.get("platform", ""),
             arch=data.get("arch", ""),
-            version=data.get("version", ""),
+            version=data.get("version", {}),
             memory=data.get("mem", {}),
             gpu=data.get("gpu", {}),
             home=data.get("home", ""),
         )
+
+    async def resolve_script_path(self, app_name: str, script: str = "start.js") -> str:
+        """Resolve the absolute filesystem path to a script file.
+
+        pinokiod's WebSocket API requires the absolute path to the script
+        file on the server (e.g. ``E:\\hal\\pinokio\\api\\comfy.git\\start.js``),
+        not a virtual ``/api/...`` URI. The vendored ``pterm`` code resolves
+        URIs using ``process.cwd()`` (same machine); pko resolves remotely
+        by fetching the pinokio home directory from ``GET /pinokio/info``.
+
+        Returns the path with forward slashes (Node.js handles both on
+        all platforms).
+        """
+        sys_info = await self.info()
+        if not sys_info.home:
+            msg = "Cannot resolve script path: pinokio home directory unknown"
+            raise RuntimeError(msg)
+        # Use PurePosixPath for clean forward-slash joining regardless of
+        # the client OS or server OS — Node.js on Windows handles both.
+        parts = PurePosixPath(sys_info.home.replace("\\", "/"), "api", app_name, script)
+        return str(parts)
 
     async def list_running_scripts(self) -> list[dict]:
         """GET /pinokio/info — extract only the running-scripts list.
@@ -164,12 +218,40 @@ class Client:
                 result[k.strip()] = v.strip().strip('"').strip("'")
         return result
 
-    async def get_logs(self, log_path: str) -> str:
-        """GET /getlog — retrieve logs."""
+    async def get_logs(self, log_path: str) -> str | None:
+        """GET /getlog — retrieve logs.
+
+        Returns the log text if found, None if the log file doesn't exist
+        (pinokiod returns 500 with an HTML error page for missing files).
+        """
         r = await self._http.get("/getlog", params={"logpath": log_path})
         if r.status_code != 200:
-            return ""
+            return None
+        # pinokiod sometimes returns HTML error pages with 200 status
+        if r.text.strip().startswith("<html") or r.text.strip().startswith("<!DOCTYPE"):
+            return None
         return r.text
+
+    async def get_app_logs(self, app_id: str, script: str = "start.js", tail: int = 50) -> dict | None:
+        """GET /apps/logs/:id — structured logs for an app.
+
+        Returns a dict with 'text' (full log content), 'lines' (list of lines),
+        'line_count', 'size', and 'modified'. Returns None if the app has no logs.
+        This is the canonical log endpoint used by pterm.
+        """
+        r = await self._http.get(
+            f"/apps/logs/{app_id}",
+            params={"script": script, "tail": str(tail)},
+        )
+        if r.status_code != 200:
+            return None
+        try:
+            data = r.json()
+            if not isinstance(data, dict) or "text" not in data:
+                return None
+            return data
+        except Exception:
+            return None
 
     async def restart(self) -> bool:
         """POST /restart — restart the server."""
@@ -177,30 +259,47 @@ class Client:
         return r.status_code == 200
 
     async def disk_usage(self, app_name: str) -> str | None:
-        """GET /du/:name — disk usage for an app."""
+        """GET /du/:name — disk usage for an app.
+
+        Returns a human-readable string like "209 MB" or "6.6 GB".
+        The raw response is JSON with a ``du`` key containing bytes.
+        """
         r = await self._http.get(f"/du/{app_name}")
         if r.status_code != 200:
             return None
-        return r.text
+        try:
+            data = r.json()
+            raw = data.get("du", r.text)
+        except Exception:
+            raw = r.text
+        if isinstance(raw, (int, float)):
+            return _format_bytes(raw)
+        if isinstance(raw, str) and raw.strip().isdigit():
+            return _format_bytes(int(raw.strip()))
+        # Already a string like "1.2GB" — return as-is
+        return str(raw) if raw else None
 
-    async def get_app_status(self, app_name: str) -> dict | None:
+    async def get_app_status(self, app_name: str) -> AppStatus | None:
         """GET /apps/status/:id — rich per-app status.
 
-        Discovered via the vendored pterm/util.js reference (ADR-005):
-        pterm's own `status` command uses this endpoint, not a WebSocket
-        probe. Confirmed live: returns running/ready state, title,
-        description, icon, ready_url, and running_scripts in one HTTP
-        call — strictly better than pko's prior WebSocket check_status()
-        approach (which mis-resolves the running script's URI for apps
-        whose default script isn't literally 'start.js', and needed a
-        separate call for app metadata). Superseded WsClient.check_status
-        as the canonical status path — see ADR-004 addendum.
+        Returns a typed AppStatus dataclass. Returns None if the app
+        doesn't exist or the endpoint is unavailable.
         """
         r = await self._http.get(f"/apps/status/{app_name}")
         if r.status_code != 200:
             return None
         try:
-            return r.json()
+            data = r.json()
+            return AppStatus(
+                app_id=data.get("app_id", app_name),
+                running=bool(data.get("running", False)),
+                ready_url=data.get("ready_url", ""),
+                title=data.get("title", ""),
+                description=data.get("description", ""),
+                icon=data.get("icon", ""),
+                path=data.get("path", app_name),
+                running_scripts=data.get("running_scripts", []),
+            )
         except (json.JSONDecodeError, httpx.HTTPError):
             return None
 
@@ -218,11 +317,11 @@ class Client:
         if status is not None:
             return AppInfo(
                 name=app_name,
-                path=status.get("path", app_name),
-                title=status.get("title", app_name),
-                description=status.get("description", ""),
-                icon=status.get("icon", ""),
-                running=bool(status.get("running", False)),
+                path=status.path or app_name,
+                title=status.title or app_name,
+                description=status.description or "",
+                icon=status.icon or "",
+                running=status.running,
                 disk_usage=du or "",
             )
         script = await self.read_pinokio_js(app_name)
@@ -287,16 +386,19 @@ class WsClient:
         async with websockets.connect(self.instance.ws_url) as ws:
             await ws.send(json.dumps(payload))
 
-    async def check_status(self, uri: str) -> bool:
-        """Check if a script is running."""
-        payload = {"uri": uri, "status": True}
+    async def start_script_and_wait(self, uri: str) -> str:
+        """Run a script and return the accumulated output text."""
+        output_parts: list[str] = []
 
-        async with websockets.connect(self.instance.ws_url) as ws:
-            await ws.send(json.dumps(payload))
-            async for raw in ws:
-                try:
-                    data = json.loads(raw)
-                    return data.get("data") is True
-                except json.JSONDecodeError:
-                    continue
-        return False
+        async for packet in self.run_script(uri):
+            if packet.type == "stream":
+                text = packet.data.get("data", "")
+                if text:
+                    output_parts.append(text)
+            elif packet.type == "error":
+                error_msg = packet.data.get("message", str(packet.data))
+                output_parts.append(f"[ERROR] {error_msg}")
+            elif packet.type == "result":
+                break
+
+        return "".join(output_parts)

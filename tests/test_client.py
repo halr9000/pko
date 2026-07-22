@@ -1,11 +1,10 @@
 """Tests for pko HTTP client (mocked and integration)."""
-import json
 from unittest.mock import patch
 
 import httpx
 import pytest
 
-from pko.client import Client, WsClient
+from pko.client import Client
 from pko.models import PinokioInstance
 
 LOCAL = PinokioInstance(host="localhost", port=42000, is_local=True)
@@ -213,8 +212,9 @@ class TestClientGetAppStatus:
             c = Client(LOCAL)
             status = await c.get_app_status("testapp")
             assert status is not None
-            assert status["running"] is True
-            assert status["ready_url"] == "http://127.0.0.1:7860"
+            assert status.app_id == "testapp"
+            assert status.running is True
+            assert status.ready_url == "http://127.0.0.1:7860"
             await c.close()
 
     async def test_not_found(self):
@@ -241,12 +241,12 @@ class TestClientGetLogs:
 
     async def test_not_found(self):
         async def mock_get(*a, **kw):
-            return httpx.Response(404)
+            return httpx.Response(500)
 
         with patch.object(httpx.AsyncClient, "get", mock_get):
             c = Client(LOCAL)
             logs = await c.get_logs("nonexistent.txt")
-            assert logs == ""
+            assert logs is None
             await c.close()
 
 
@@ -290,6 +290,54 @@ class TestClientDiskUsage:
             du = await c.disk_usage("nonexistent")
             assert du is None
             await c.close()
+
+    async def test_json_bytes(self):
+        """Raw JSON response like {\"du\": 218911011} is parsed and formatted."""
+        async def mock_get(*a, **kw):
+            return httpx.Response(200, json={"du": 218911011})
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            du = await c.disk_usage("testapp")
+            assert du == "208.8 MB"
+            await c.close()
+
+    async def test_json_bytes_string(self):
+        """Raw JSON with du as a string of digits."""
+        async def mock_get(*a, **kw):
+            return httpx.Response(200, json={"du": "6638810876"})
+
+        with patch.object(httpx.AsyncClient, "get", mock_get):
+            c = Client(LOCAL)
+            du = await c.disk_usage("testapp")
+            assert du == "6.2 GB"
+            await c.close()
+
+
+class TestFormatBytes:
+    def test_zero(self):
+        from pko.client import _format_bytes
+        assert _format_bytes(0) == "0 B"
+
+    def test_bytes(self):
+        from pko.client import _format_bytes
+        assert _format_bytes(500) == "500 B"
+
+    def test_kilobytes(self):
+        from pko.client import _format_bytes
+        assert _format_bytes(2048) == "2.0 KB"
+
+    def test_megabytes(self):
+        from pko.client import _format_bytes
+        assert _format_bytes(218911011) == "208.8 MB"
+
+    def test_gigabytes(self):
+        from pko.client import _format_bytes
+        assert _format_bytes(6638810876) == "6.2 GB"
+
+    def test_terabytes(self):
+        from pko.client import _format_bytes
+        assert _format_bytes(2_199_023_255_552) == "2.0 TB"
 
 
 class TestExtractJsModuleFields:
@@ -418,66 +466,6 @@ class TestClientGetAppMetadata:
             await c.close()
 
 
-class TestWsClientCheckStatus:
-    async def test_running(self):
-        class FakeWs:
-            async def send(self, data):
-                pass
-
-            def __aiter__(self):
-                return self
-
-            async def __anext__(self):
-                if getattr(self, "_sent", False):
-                    raise StopAsyncIteration
-                self._sent = True
-                return json.dumps({"data": True})
-
-        class FakeConnect:
-            def __init__(self, url):
-                pass
-
-            async def __aenter__(self):
-                return FakeWs()
-
-            async def __aexit__(self, *a):
-                return False
-
-        with patch("websockets.connect", FakeConnect):
-            ws = WsClient(LOCAL)
-            result = await ws.check_status("/api/testapp/index.json")
-            assert result is True
-
-    async def test_not_running(self):
-        class FakeWs:
-            async def send(self, data):
-                pass
-
-            def __aiter__(self):
-                return self
-
-            async def __anext__(self):
-                if getattr(self, "_sent", False):
-                    raise StopAsyncIteration
-                self._sent = True
-                return json.dumps({"data": False})
-
-        class FakeConnect:
-            def __init__(self, url):
-                pass
-
-            async def __aenter__(self):
-                return FakeWs()
-
-            async def __aexit__(self, *a):
-                return False
-
-        with patch("websockets.connect", FakeConnect):
-            ws = WsClient(LOCAL)
-            result = await ws.check_status("/api/testapp/index.json")
-            assert result is False
-
-
 #
 # ── Integration tests (live pinokiod) ───────────────────────────────
 #
@@ -504,7 +492,7 @@ class TestLiveClient:
         c = Client(inst)
         ok = await c.health()
         if not ok:
-            pytest.skip(f"pinokiod not running at {inst.host}:{inst.port}")
+            pytest.fail(f"pinokiod not reachable at {inst.host}:{inst.port} — set PKO_TEST_HOST/PKO_TEST_PORT")
         yield c
         await c.close()
 
@@ -534,3 +522,155 @@ class TestLiveClient:
     async def test_get_app_status_for_nonexistent(self, live_client):
         status = await live_client.get_app_status("definitely-not-a-real-app-xyz")
         assert status is None
+
+    async def test_disk_usage_formatted(self, live_client):
+        """Disk usage returns a human-readable string for a real app."""
+        apps = await live_client.list_apps_from_info()
+        assert len(apps) > 0
+        app_name = apps[0]["path"]
+        du = await live_client.disk_usage(app_name)
+        assert du is not None
+        # Should be formatted like "209 MB" or "6.6 GB" or "1234 B"
+        assert any(c.isdigit() for c in du)
+        assert any(unit in du for unit in ("B", "KB", "MB", "GB", "TB"))
+
+    async def test_logs(self, live_client):
+        """Logs endpoint returns None for non-existent files."""
+        logs = await live_client.get_logs("definitely-not-a-real-log-file-xyz.txt")
+        assert logs is None
+
+    async def test_restart(self, live_client):
+        """Restart signal is accepted by the server."""
+        ok = await live_client.restart()
+        assert ok is True
+
+    async def test_app_lifecycle(self, live_client):
+        """Start an app, verify it's running, stop it, verify it's stopped.
+
+        Uses pinokio-hello-world which must be installed on the target instance.
+        """
+        import asyncio
+
+        from pko.client import WsClient
+
+        inst = _test_instance()
+        apps = await live_client.list_apps_from_info()
+        hello_apps = [a for a in apps if "hello-world" in str(a.get("path", ""))]
+        if not hello_apps:
+            pytest.fail("pinokio-hello-world not installed on target instance — install it first via pko install")
+
+        app_name = hello_apps[0]["path"]
+
+        # Resolve the script path
+        script_uri = await live_client.resolve_script_path(app_name, "start.js")
+
+        # If the app is already running, stop it first
+        status = await live_client.get_app_status(app_name)
+        if status and status.running:
+            ws = WsClient(inst)
+            try:
+                async with asyncio.timeout(10):
+                    await ws.stop_script(script_uri)
+            except asyncio.TimeoutError:
+                pass
+            await asyncio.sleep(1)
+
+        # Start the app
+        ws = WsClient(inst)
+        try:
+            async with asyncio.timeout(30):
+                result_text = await ws.start_script_and_wait(script_uri)
+            assert isinstance(result_text, str)
+        except asyncio.TimeoutError:
+            pytest.fail("Timed out waiting for app to start — check that the app is installed and pinokiod is responsive")
+        finally:
+            pass  # keep ws alive for now
+
+        # Verify it's now running
+        status = await live_client.get_app_status(app_name)
+        assert status is not None, f"App {app_name} should be found"
+        assert status.running, f"App {app_name} should be running"
+
+        # Stop the app
+        try:
+            async with asyncio.timeout(15):
+                await ws.stop_script(script_uri)
+        except asyncio.TimeoutError:
+            pytest.fail("Timed out stopping app")
+
+        # Give the server a moment to process the stop
+        await asyncio.sleep(1)
+
+        # Verify it's stopped
+        # Note: get_app_status may still show running briefly after stop
+        # We check that the running_scripts list is empty
+        scripts = await live_client.list_running_scripts()
+        hello_scripts = [s for s in scripts if app_name in str(s.get("app", ""))]
+        assert len(hello_scripts) == 0, f"App {app_name} should not have running scripts"
+
+
+@pytest.mark.integration
+class TestLiveWsClient:
+    """WebSocket integration tests against a live pinokiod instance."""
+
+    @pytest.fixture
+    async def live_ws(self):
+        inst = _test_instance()
+        from pko.client import WsClient
+        ws = WsClient(inst)
+        yield ws
+
+    async def test_ws_connection(self, live_ws):
+        """WebSocket connection to pinokiod can be established."""
+        import asyncio
+        import json
+
+        import websockets
+
+        inst = _test_instance()
+        # Retry health check in case a restart test ran before this
+        for attempt in range(5):
+            c = Client(inst)
+            ok = await c.health()
+            await c.close()
+            if ok:
+                break
+            if attempt < 4:
+                await asyncio.sleep(2)
+        else:
+            pytest.fail(f"pinokiod not reachable at {inst.host}:{inst.port} — set PKO_TEST_HOST/PKO_TEST_PORT")
+
+        # Verify the WebSocket handshake succeeds — the connection itself
+        # proves the server accepts WebSocket upgrades on the same port.
+        try:
+            async with asyncio.timeout(10):
+                async with websockets.connect(inst.ws_url) as _:
+                    pass  # Connection established = handshake succeeded
+        except (OSError, asyncio.TimeoutError, websockets.WebSocketException) as e:
+            pytest.fail(f"WebSocket handshake failed: {e}")
+
+    async def test_ws_stop_nonexistent(self, live_ws):
+        """Stopping a nonexistent script should not raise an error."""
+        import asyncio
+
+        inst = _test_instance()
+        # Retry health check in case a restart test ran before this
+        for attempt in range(5):
+            c = Client(inst)
+            ok = await c.health()
+            await c.close()
+            if ok:
+                break
+            if attempt < 4:
+                await asyncio.sleep(2)
+        else:
+            pytest.fail(f"pinokiod not reachable at {inst.host}:{inst.port} — set PKO_TEST_HOST/PKO_TEST_PORT")
+
+        from pko.client import WsClient
+        ws = WsClient(inst)
+        # Should not raise — stopping a script that isn't running is a no-op
+        try:
+            async with asyncio.timeout(10):
+                await ws.stop_script("/api/nonexistent-app/start.js")
+        except asyncio.TimeoutError:
+            pytest.fail("WebSocket stop_script timed out")

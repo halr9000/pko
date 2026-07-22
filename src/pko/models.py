@@ -27,6 +27,19 @@ class PinokioInstance:
 
 
 @dataclass
+class AppStatus:
+    """Rich per-app status from /apps/status/:id."""
+    app_id: str
+    running: bool = False
+    ready_url: str = ""
+    title: str = ""
+    description: str = ""
+    icon: str = ""
+    path: str = ""
+    running_scripts: list = field(default_factory=list)
+
+
+@dataclass
 class AppInfo:
     """Information about an installed app."""
     name: str
@@ -84,4 +97,3 @@ class WsPacket:
 
 DEFAULT_PORT = 42000
 KNOWN_PORTS = [42000, 42001, 42002, 43000]
-PINOKIO_HOME = "~/pinokio"

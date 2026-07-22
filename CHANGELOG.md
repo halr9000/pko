@@ -5,6 +5,42 @@ All notable changes to pko are documented here. Format loosely follows
 [SemVer](https://semver.org/) with the understanding that pre-1.0 minor bumps
 may include breaking CLI changes.
 
+## [0.3.0] - 2026-07-21
+
+### Architecture
+- Decomposed the 1000-line `main.py` monolith into focused modules: `app.py` (app lifecycle), `system.py` (system/config), `ui.py` (shared UI helpers). `main.py` is now a thin entry point that imports commands from submodules.
+- Added `AppStatus` typed dataclass — `get_app_status()` now returns `AppStatus | None` instead of a raw `dict`.
+- Added `run_client()` helper to `client.py` — shared async client lifecycle (create, health-check, handler, close) used by all commands.
+- Removed dead code: `WsClient.check_status()` method and its tests (superseded by HTTP-based `get_app_status()`).
+
+### Added
+- `start <app>` — now functional! Runs an app's script via WebSocket and streams output to the console.
+- `stop <app>` — now functional! Sends a stop command to a running app via WebSocket.
+- `install <source>` — now functional! Clones a git repo into `~/pinokio/api/<name>/` for local instances; prints web UI instructions for remote instances.
+- `pko start --script <name>` option to specify a custom script (default: `index.json`).
+- `pko stop --script <name>` option for consistency with start.
+- `pko start` and `pko stop` handle Ctrl+C gracefully (app continues running in background).
+- `pko logs <app_name>` — canonical log viewer using `/apps/logs/:id` endpoint (same as `pterm logs`).
+- `pko logs --list` / `-l` — enumerate available log files for all installed apps with line counts and timestamps.
+- `pko logs --script <name>` / `-s` — specify which script's logs to view (default: `start.js`).
+- `get_app_logs()` on `Client` — typed log retrieval returning structured dict with `text`, `lines`, `line_count`, `size`, `modified`.
+- `--help` output now grouped into logical panels: System, Discovery, App Lifecycle — with `rich_help_panel` and `rich_markup_mode`.
+- Full app lifecycle integration test (`test_app_lifecycle`) using pinokio-hello-world: start → verify running → stop → verify stopped.
+- CLI-level integration tests (`TestLiveAppLifecycle`) for list, status --all, info against a live instance.
+- README.md rewritten for two audiences (end users + developers) with hello-world examples, troubleshooting table, and agent integration docs.
+- AGENTS.md cleaned up: removed phase column, sync'd command groups, validated `npx skills add halr9000/pko` syntax.
+
+### Fixed
+- `.githooks/pre-commit` now detects cross-OS venvs (e.g., Linux-originated venv on Windows) and skips gracefully instead of failing.
+- Removed unused imports across all modules.
+- `get_app_status()` returns typed `AppStatus` model instead of raw dict.
+- `WsClient` now has `start_script_and_wait()` convenience method for programmatic use.
+- `get_logs()` return type changed from `str` to `str | None` — properly distinguishes empty logs from missing files.
+- `get_logs()` detects HTML error pages (pinokiod returns them with 200 status for missing files).
+- `pko stop --script` help text corrected from "Script URI" to "Script to stop".
+- Integration tests fail (not skip) when the target instance is unreachable — `pytest.fail` with clear env var hint.
+- `test_app_lifecycle` handles already-running apps by stopping them first before the start cycle.
+
 ## [0.2.0] - 2026-07-19
 
 ### Added
